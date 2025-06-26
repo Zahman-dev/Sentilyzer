@@ -1,5 +1,39 @@
-# Byte-compiled / optimized / DLL files
+# Editor & IDE specific
+*.code-workspace
+.vscode/
+.idea/
+
+# Local configuration files
+pip.conf
+.env
+.env.*
+!.env.example
+
+# Python cache & artifacts
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+env/
+venv/
+ENV/
+
+# Other
+.DS_Store
+*.log
+celerybeat-schedule
+celerybeat.pid
+
+# Byte-compiled / optimized / DLL files
 *.py[cod]
 *$py.class
 
@@ -8,9 +42,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -38,25 +70,17 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
-htmlcov/
 .tox/
 .nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
-.pytest_cache/
 
 # Translations
 *.mo
 *.pot
 
 # Django stuff:
-*.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -94,21 +118,8 @@ ipython_config.py
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow
 __pypackages__/
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
 # SageMath parsed files
 *.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
 
 # Spyder project settings
 .spyderproject
@@ -132,14 +143,11 @@ dmypy.json
 .dockerignore
 
 # IDE
-.vscode/
-.idea/
 *.swp
 *.swo
 *~
 
 # OS
-.DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100

@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://sentilyzer_user:sentilyzer_password@localhost:5432/sentilyzer_db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://sentilyzer_user:sentilyzer_password@localhost:5432/sentilyzer_db",
+)
 
 # Create engine
 engine = create_engine(
@@ -15,7 +18,7 @@ engine = create_engine(
     pool_size=20,
     max_overflow=0,
     pool_pre_ping=True,
-    echo=False  # Set to True for SQL debugging
+    echo=False,  # Set to True for SQL debugging
 )
 
 # Create SessionLocal class
@@ -53,4 +56,4 @@ def create_session():
     Create a database session for scripts and utilities.
     Alias for create_db_session for consistency with generate_api_key.py
     """
-    return SessionLocal() 
+    return SessionLocal()

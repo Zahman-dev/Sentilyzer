@@ -3,7 +3,9 @@ import os
 
 # This ensures the common library can be found
 # For Docker, this path will be /common, for local dev it will be the relative path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'common')))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "common"))
+)
 
 import logging
 from datetime import datetime
@@ -19,15 +21,18 @@ from sqlalchemy import and_, desc
 from app.db.session import get_db
 from app.db.models import RawArticle, SentimentScore, ApiKey, User
 from app.schemas.sentiment import (
-    SignalsRequest, SignalsResponse, SentimentData, 
-    HealthResponse, ErrorResponse
+    SignalsRequest,
+    SignalsResponse,
+    SentimentData,
+    HealthResponse,
+    ErrorResponse,
 )
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='{"timestamp": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
 
@@ -40,7 +45,7 @@ app = FastAPI(
     description="Financial sentiment analysis and signals API",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 # Add CORS middleware
@@ -55,7 +60,7 @@ app.add_middleware(
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(security),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> User:
     """
     Authenticate user based on API key.
@@ -63,59 +68,47 @@ async def get_current_user(
     try:
         # Extract API key from Bearer token
         api_key = credentials.credentials
-        
+
         # Hash the provided API key
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        
+
         # Query for the API key
-        api_key_record = db.query(ApiKey).filter(
-            and_(
-                ApiKey.key_hash == key_hash,
-                ApiKey.is_active == True
-            )
-        ).first()
-        
+        api_key_record = (
+            db.query(ApiKey)
+            .filter(and_(ApiKey.key_hash == key_hash, ApiKey.is_active == True))
+            .first()
+        )
+
         if not api_key_record:
             logger.warning(f"Invalid API key attempt: {key_hash[:8]}...")
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid or expired API key"
-            )
-        
+            raise HTTPException(status_code=401, detail="Invalid or expired API key")
+
         # Check if API key has expired
         if api_key_record.expires_at and api_key_record.expires_at < datetime.utcnow():
             logger.warning(f"Expired API key used: {key_hash[:8]}...")
-            raise HTTPException(
-                status_code=401,
-                detail="API key has expired"
-            )
-        
+            raise HTTPException(status_code=401, detail="API key has expired")
+
         # Get associated user
-        user = db.query(User).filter(
-            and_(
-                User.id == api_key_record.user_id,
-                User.is_active == True
-            )
-        ).first()
-        
+        user = (
+            db.query(User)
+            .filter(and_(User.id == api_key_record.user_id, User.is_active == True))
+            .first()
+        )
+
         if not user:
-            logger.warning(f"Inactive user attempted access: user_id={api_key_record.user_id}")
-            raise HTTPException(
-                status_code=401,
-                detail="User account is inactive"
+            logger.warning(
+                f"Inactive user attempted access: user_id={api_key_record.user_id}"
             )
-        
+            raise HTTPException(status_code=401, detail="User account is inactive")
+
         logger.info(f"Authenticated user: {user.email}")
         return user
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Authentication error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Authentication service error"
-        )
+        raise HTTPException(status_code=500, detail="Authentication service error")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -123,84 +116,82 @@ async def health_check():
     """
     Health check endpoint - No authentication required.
     """
-    return HealthResponse(
-        status="ok",
-        timestamp=datetime.utcnow(),
-        version="1.0.0"
-    )
+    return HealthResponse(status="ok", timestamp=datetime.utcnow(), version="1.0.0")
 
 
 @app.post("/v1/signals", response_model=SignalsResponse)
 async def get_sentiment_signals(
     request: SignalsRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Get sentiment analysis signals for a given time period.
-    
+
     This endpoint returns sentiment data (not investment advice) for articles
     published within the specified date range. The data includes sentiment scores
     and labels generated by our analysis models.
-    
+
     **Important Disclaimer**: This is analytical data only, not investment advice.
     **Authentication**: Requires valid API key in Authorization header.
     """
     try:
-        logger.info(f"Processing signals request for user: {current_user.email}, ticker: {request.ticker}, dates: {request.start_date} to {request.end_date}")
-        
+        logger.info(
+            f"Processing signals request for user: {current_user.email}, ticker: {request.ticker}, dates: {request.start_date} to {request.end_date}"
+        )
+
         # Query for articles with sentiment scores in the date range
-        query = db.query(
-            RawArticle.article_url,
-            RawArticle.headline,
-            RawArticle.published_at,
-            SentimentScore.sentiment_score,
-            SentimentScore.sentiment_label
-        ).join(
-            SentimentScore, RawArticle.id == SentimentScore.article_id
-        ).filter(
-            and_(
-                RawArticle.published_at >= request.start_date,
-                RawArticle.published_at <= request.end_date,
-                RawArticle.has_error == False
+        query = (
+            db.query(
+                RawArticle.article_url,
+                RawArticle.headline,
+                RawArticle.published_at,
+                SentimentScore.sentiment_score,
+                SentimentScore.sentiment_label,
             )
-        ).order_by(desc(RawArticle.published_at))
-        
+            .join(SentimentScore, RawArticle.id == SentimentScore.article_id)
+            .filter(
+                and_(
+                    RawArticle.published_at >= request.start_date,
+                    RawArticle.published_at <= request.end_date,
+                    RawArticle.has_error == False,
+                )
+            )
+            .order_by(desc(RawArticle.published_at))
+        )
+
         # Execute query
         results = query.all()
-        
+
         # Convert to response format
         sentiment_data = []
         for result in results:
-            sentiment_data.append(SentimentData(
-                article_url=result.article_url,
-                headline=result.headline,
-                published_at=result.published_at,
-                sentiment_score=result.sentiment_score,
-                sentiment_label=result.sentiment_label
-            ))
-        
-        logger.info(f"Returning {len(sentiment_data)} sentiment records for user: {current_user.email}")
-        
-        return SignalsResponse(
-            data=sentiment_data,
-            total_count=len(sentiment_data)
+            sentiment_data.append(
+                SentimentData(
+                    article_url=result.article_url,
+                    headline=result.headline,
+                    published_at=result.published_at,
+                    sentiment_score=result.sentiment_score,
+                    sentiment_label=result.sentiment_label,
+                )
+            )
+
+        logger.info(
+            f"Returning {len(sentiment_data)} sentiment records for user: {current_user.email}"
         )
-        
+
+        return SignalsResponse(data=sentiment_data, total_count=len(sentiment_data))
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error processing signals request: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @app.get("/v1/stats")
 async def get_stats(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """
     Get basic statistics about the data in the system.
@@ -208,51 +199,51 @@ async def get_stats(
     """
     try:
         logger.info(f"Stats request from user: {current_user.email}")
-        
+
         # Count total articles
         total_articles = db.query(RawArticle).count()
-        
+
         # Count processed articles
-        processed_articles = db.query(RawArticle).filter(
-            RawArticle.is_processed == True
-        ).count()
-        
+        processed_articles = (
+            db.query(RawArticle).filter(RawArticle.is_processed == True).count()
+        )
+
         # Count articles with errors
-        error_articles = db.query(RawArticle).filter(
-            RawArticle.has_error == True
-        ).count()
-        
+        error_articles = (
+            db.query(RawArticle).filter(RawArticle.has_error == True).count()
+        )
+
         # Count sentiment scores
         total_sentiment_scores = db.query(SentimentScore).count()
-        
+
         # Get latest article date
-        latest_article = db.query(RawArticle).order_by(
-            desc(RawArticle.published_at)
-        ).first()
-        
+        latest_article = (
+            db.query(RawArticle).order_by(desc(RawArticle.published_at)).first()
+        )
+
         latest_article_date = latest_article.published_at if latest_article else None
-        
+
         return {
             "total_articles": total_articles,
             "processed_articles": processed_articles,
             "error_articles": error_articles,
             "total_sentiment_scores": total_sentiment_scores,
             "latest_article_date": latest_article_date,
-            "processing_rate": f"{processed_articles}/{total_articles}" if total_articles > 0 else "0/0"
+            "processing_rate": (
+                f"{processed_articles}/{total_articles}"
+                if total_articles > 0
+                else "0/0"
+            ),
         }
-        
+
     except Exception as e:
         logger.error(f"Error getting stats: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @app.get("/v1/sources")
 async def get_sources(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """
     Get available data sources and their article counts.
@@ -260,43 +251,37 @@ async def get_sources(
     """
     try:
         logger.info(f"Sources request from user: {current_user.email}")
-        
+
         # Get source statistics
-        sources_query = db.query(
-            RawArticle.source,
-            db.func.count(RawArticle.id).label('article_count'),
-            db.func.max(RawArticle.published_at).label('latest_article')
-        ).group_by(RawArticle.source).all()
-        
+        sources_query = (
+            db.query(
+                RawArticle.source,
+                db.func.count(RawArticle.id).label("article_count"),
+                db.func.max(RawArticle.published_at).label("latest_article"),
+            )
+            .group_by(RawArticle.source)
+            .all()
+        )
+
         sources = []
         for source_data in sources_query:
-            sources.append({
-                "source": source_data.source,
-                "article_count": source_data.article_count,
-                "latest_article": source_data.latest_article
-            })
-        
-        return {
-            "sources": sources,
-            "total_sources": len(sources)
-        }
-        
+            sources.append(
+                {
+                    "source": source_data.source,
+                    "article_count": source_data.article_count,
+                    "latest_article": source_data.latest_article,
+                }
+            )
+
+        return {"sources": sources, "total_sources": len(sources)}
+
     except Exception as e:
         logger.error(f"Error getting sources: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     logger.info("Starting Signals API Service")
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    ) 
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")

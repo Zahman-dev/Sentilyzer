@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 # Add the path to the common module
-sys.path.append(os.path.join(os.path.dirname(__file__), '../services/common'))
+sys.path.append(os.path.join(os.path.dirname(__file__), "../services/common"))
 
 try:
     from sqlalchemy.orm import Session
@@ -33,7 +33,7 @@ def generate_api_key() -> str:
     Generate a cryptographically secure API key with Sentilyzer prefix.
     """
     alphabet = string.ascii_letters + string.digits
-    random_part = ''.join(secrets.choice(alphabet) for _ in range(32))
+    random_part = "".join(secrets.choice(alphabet) for _ in range(32))
     api_key = f"sntzr_{random_part}"
     return api_key
 
@@ -50,62 +50,53 @@ def hash_password(password: str) -> str:
     """
     Hash a password using bcrypt for secure storage.
     """
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def create_user_and_api_key(
-    email: str, 
-    password: str, 
-    expires_in_days: Optional[int] = None
+    email: str, password: str, expires_in_days: Optional[int] = None
 ) -> tuple[User, ApiKey, str]:
     """
     Create a new user and associated API key in the database.
-    
+
     Returns:
         tuple: (user, api_key_record, raw_api_key)
     """
     try:
         # Create database session
         session = create_session()
-        
+
         # Check if user already exists
         existing_user = session.query(User).filter(User.email == email).first()
         if existing_user:
             raise ValueError(f"User with email {email} already exists")
-        
+
         # Create new user
         hashed_password = hash_password(password)
-        user = User(
-            email=email,
-            hashed_password=hashed_password,
-            is_active=True
-        )
+        user = User(email=email, hashed_password=hashed_password, is_active=True)
         session.add(user)
         session.flush()  # Get the user ID
-        
+
         # Generate API key
         raw_api_key = generate_api_key()
         key_hash = hash_api_key(raw_api_key)
-        
+
         # Calculate expiration date
         expires_at = None
         if expires_in_days:
             expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
-        
+
         # Create API key record
         api_key_record = ApiKey(
-            key_hash=key_hash,
-            user_id=user.id,
-            is_active=True,
-            expires_at=expires_at
+            key_hash=key_hash, user_id=user.id, is_active=True, expires_at=expires_at
         )
         session.add(api_key_record)
-        
+
         # Commit transaction
         session.commit()
-        
+
         return user, api_key_record, raw_api_key
-        
+
     except Exception as e:
         session.rollback()
         raise e
@@ -120,20 +111,22 @@ def main():
     print("🔑 Sentilyzer API Key Generator (Phase 2)")
     print("=" * 50)
     print()
-    
+
     try:
         # Get user input
         email = input("Enter user email: ").strip()
         if not email or "@" not in email:
             print("❌ Please provide a valid email address.")
             return
-        
+
         password = input("Enter user password: ").strip()
         if len(password) < 8:
             print("❌ Password must be at least 8 characters long.")
             return
-        
-        expires_input = input("API key expiration (days, blank for no expiration): ").strip()
+
+        expires_input = input(
+            "API key expiration (days, blank for no expiration): "
+        ).strip()
         expires_in_days = None
         if expires_input:
             try:
@@ -144,17 +137,15 @@ def main():
             except ValueError:
                 print("❌ Please enter a valid number of days.")
                 return
-        
+
         print()
         print("Creating user and generating API key...")
-        
+
         # Create user and API key
         user, api_key_record, raw_api_key = create_user_and_api_key(
-            email=email,
-            password=password,
-            expires_in_days=expires_in_days
+            email=email, password=password, expires_in_days=expires_in_days
         )
-        
+
         print()
         print("✅ SUCCESS!")
         print("-" * 30)
@@ -171,13 +162,15 @@ def main():
         print("   - This API key will NOT be shown again")
         print("   - Store it securely (password manager recommended)")
         print("   - Use it in Authorization header: Bearer <key>")
-        print(f"   - Test with: curl -H 'Authorization: Bearer {raw_api_key}' <api_url>")
+        print(
+            f"   - Test with: curl -H 'Authorization: Bearer {raw_api_key}' <api_url>"
+        )
         print()
         print("🎯 Next Steps:")
         print("   1. Save the API key securely")
         print("   2. Test authentication with /v1/signals endpoint")
         print("   3. Monitor usage in application logs")
-        
+
     except ValueError as e:
         print(f"❌ Error: {e}")
     except Exception as e:
@@ -186,4 +179,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -1,1 +1,1 @@
-# Signals API Service 
+# Signals API Service

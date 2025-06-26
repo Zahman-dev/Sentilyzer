@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 # Request schemas
 class SignalsRequest(BaseModel):
     ticker: str = Field(..., description="Stock ticker symbol (e.g., 'AAPL')")
-    start_date: datetime = Field(..., description="Start date for analysis in ISO format")
+    start_date: datetime = Field(
+        ..., description="Start date for analysis in ISO format"
+    )
     end_date: datetime = Field(..., description="End date for analysis in ISO format")
 
 
@@ -15,8 +17,12 @@ class SentimentData(BaseModel):
     article_url: str
     headline: str
     published_at: datetime
-    sentiment_score: float = Field(..., ge=-1.0, le=1.0, description="Sentiment score between -1 and 1")
-    sentiment_label: str = Field(..., description="Sentiment label: positive, negative, or neutral")
+    sentiment_score: float = Field(
+        ..., ge=-1.0, le=1.0, description="Sentiment score between -1 and 1"
+    )
+    sentiment_label: str = Field(
+        ..., description="Sentiment label: positive, negative, or neutral"
+    )
 
     class Config:
         from_attributes = True
@@ -85,4 +91,4 @@ class SentimentScore(SentimentScoreBase):
     processed_at: datetime
 
     class Config:
-        from_attributes = True 
+        from_attributes = True

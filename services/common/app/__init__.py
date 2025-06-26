@@ -1,1 +1,1 @@
-# Common library for Sentilyzer platform 
+# Common library for Sentilyzer platform

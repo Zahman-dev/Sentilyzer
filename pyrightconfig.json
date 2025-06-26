@@ -1,0 +1,39 @@
+{
+    "include": [
+        "services/**/*.py",
+        "tests/**/*.py",
+        "scripts/**/*.py"
+    ],
+    "exclude": [
+        "**/__pycache__",
+        "**/.pytest_cache",
+        "**/node_modules",
+        "**/.venv",
+        "**/venv"
+    ],
+    "extraPaths": [
+        "./services/common/app",
+        "./services/sentiment_processor/app",
+        "./services/data_ingestor/app",
+        "./services/signals_api/app",
+        "./services/dashboard/app",
+        "./services/twitter_ingestor/app"
+    ],
+    "pythonVersion": "3.10",
+    "pythonPlatform": "Linux",
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "autoImportCompletions": true,
+    "autoSearchPaths": true,
+    "stubPath": "./typings",
+    "reportMissingImports": "none",
+    "reportMissingModuleSource": "none",
+    "reportImportCycles": "warning",
+    "reportUnusedImport": "information",
+    "reportUnusedVariable": "information",
+    "reportGeneralTypeIssues": "warning",
+    "reportOptionalMemberAccess": "warning",
+    "reportOptionalSubscript": "warning",
+    "reportPrivateImportUsage": "none",
+    "reportWildcardImportFromLibrary": "warning"
+} 

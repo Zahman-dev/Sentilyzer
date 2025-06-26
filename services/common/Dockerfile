@@ -1,0 +1,22 @@
+FROM python:3.10.17-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY services/common/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy common code
+COPY services/common .
+
+# Set PYTHONPATH to include the app directory
+ENV PYTHONPATH=/app
+
+# Default command
+CMD ["alembic", "upgrade", "head"] 

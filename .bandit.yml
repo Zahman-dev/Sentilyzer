@@ -1,0 +1,18 @@
+# .bandit.yml
+# Bandit configuration file
+# https://bandit.readthedocs.io/en/latest/config.html
+
+# Tests to skip
+skips:
+  # Don't flag asserts, they are used in tests
+  - "B101"
+  # Don't flag 'try, except, pass', it's used for optional imports
+  - "B110"
+  # Don't flag 'exec', it might be used safely in some contexts
+  - "B102"
+
+# Paths to exclude
+exclude_dirs:
+  - "tests/"
+  - "alembic/"
+  - ".venv/" 

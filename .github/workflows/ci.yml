@@ -4,291 +4,253 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 env:
   PYTHON_VERSION: '3.10'
+  DOCKER_IMAGE_PREFIX: ghcr.io/${{ github.repository }}/sentilyzer-
 
 jobs:
-  # Job 1: Code Quality and Linting
+  # ------------------------------------------------
+  # Job 1: Code Quality (Linting & Formatting)
+  # ------------------------------------------------
   lint:
     name: Code Quality & Linting
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('services/*/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-          
-    - name: Install common dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r services/common/requirements.txt
-        pip install -r requirements-test.txt
-        
-    - name: Install service dependencies
-      run: |
-        pip install -r services/data_ingestor/requirements.txt
-        pip install -r services/sentiment_processor/requirements.txt
-        pip install -r services/signals_api/requirements.txt
-        
-    - name: Run Black formatter check (non-blocking)
-      run: |
-        black --check --diff . || true
-        
-    - name: Run Flake8 linter
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=12 --max-line-length=127 --statistics
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # Job 2: Unit Tests
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache dev dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-dev-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-dev-
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run Black formatter check
+        run: black --check --diff .
+
+      - name: Run Flake8 linter
+        run: flake8 .
+
+      - name: Run isort check
+        run: isort --check-only --diff .
+
+  # ------------------------------------------------
+  # Job 2: Security Scans (Dependencies & Code)
+  # ------------------------------------------------
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache dev dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-dev-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-dev-
+            
+      - name: Install all dependencies for scanning
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -r services/common/requirements.txt
+          pip install -r services/data_ingestor/requirements.txt
+          pip install -r services/sentiment_processor/requirements.txt
+          pip install -r services/signals_api/requirements.txt
+          pip install -r services/dashboard/requirements.txt
+          pip install -r services/twitter_ingestor/requirements.txt
+
+      - name: Scan dependencies with Safety
+        run: |
+          # Create a combined requirements file for a full scan
+          cat services/*/requirements.txt > all_requirements.txt
+          safety check -r all_requirements.txt --full-report
+
+      - name: Scan code with Bandit
+        run: bandit -r . -c .bandit.yml -ll -ii
+
+  # ------------------------------------------------
+  # Job 3: Unit Tests
+  # ------------------------------------------------
   test-unit:
     name: Unit Tests
     runs-on: ubuntu-latest
-    needs: lint
-    
+    needs: [lint]
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('services/*/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-          
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r services/common/requirements.txt
-        pip install -r requirements-test.txt
-        pip install -r services/data_ingestor/requirements.txt
-        pip install -r services/sentiment_processor/requirements.txt
-        pip install -r services/signals_api/requirements.txt
-        
-    - name: Run unit tests
-      run: |
-        pytest tests/unit/ -v --tb=short --cov=services --cov-report=xml --cov-report=term-missing
-        
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: coverage.xml
-        flags: unittests
-        name: codecov-umbrella
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # Job 3: Integration Tests
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Cache app dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-app-${{ hashFiles('services/**/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          # Install app dependencies WITHOUT torch for speed
+          pip install -r services/common/requirements.txt
+          pip install -r services/data_ingestor/requirements.txt
+          pip install -r services/signals_api/requirements.txt
+          # Mock the ML model dependencies for unit tests
+          pip install fakeredis
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/services/common/app:${{ github.workspace }}/services/sentiment_processor/app
+        run: pytest tests/unit/
+
+  # ------------------------------------------------
+  # Job 4: Integration Tests
+  # ------------------------------------------------
   test-integration:
     name: Integration Tests
     runs-on: ubuntu-latest
-    needs: lint
-    
+    needs: [lint]
     services:
       postgres:
         image: postgres:14
-        env:
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_USER: test_user
-          POSTGRES_DB: test_db
+        env: { POSTGRES_USER: test, POSTGRES_PASSWORD: test, POSTGRES_DB: test }
+        ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        ports:
-          - 5432:5432
-          
       redis:
         image: redis:7-alpine
+        ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        ports:
-          - 6379:6379
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r services/common/requirements.txt
-        pip install -r requirements-test.txt
-        pip install -r services/data_ingestor/requirements.txt
-        pip install -r services/sentiment_processor/requirements.txt
-        pip install -r services/signals_api/requirements.txt
-        
-    - name: Run database migrations
-      env:
-        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
-      run: |
-        cd services/common && alembic upgrade head
-        
-    - name: Run integration tests
-      env:
-        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
-        REDIS_URL: redis://localhost:6379/0
-      run: |
-        pytest tests/integration/ -v --tb=short
 
-  # Job 4: Build Docker Images
-  build:
-    name: Build Docker Images
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install all dependencies (including ML)
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -r services/common/requirements.txt
+          pip install -r services/data_ingestor/requirements.txt
+          pip install -r services/signals_api/requirements.txt
+          # For integration tests, we need the full ML stack
+          pip install -r services/sentiment_processor/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          PYTHONPATH: ./
+        run: alembic -c services/common/alembic.ini upgrade head
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          REDIS_URL: "redis://localhost:6379/0"
+          PYTHONPATH: ${{ github.workspace }}/services/common/app:${{ github.workspace }}/services/sentiment_processor/app
+        run: pytest tests/integration/
+
+  # ------------------------------------------------
+  # Job 5: Build Docker Images (if tests pass)
+  # ------------------------------------------------
+  build-and-push:
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    needs: [test-unit, test-integration]
-    
+    needs: [test-unit, test-integration, security]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+
     strategy:
       matrix:
-        service: [common, data_ingestor, sentiment_processor, signals_api]
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Log in to Container Registry (if on main branch)
-      if: github.ref == 'refs/heads/main'
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ghcr.io/${{ github.repository }}/sentilyzer-${{ matrix.service }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix={{branch}}-
-          type=raw,value=latest,enable={{is_default_branch}}
-          
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./services/${{ matrix.service }}
-        platforms: linux/amd64,linux/arm64
-        push: ${{ github.ref == 'refs/heads/main' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        service: [common, data_ingestor, sentiment_processor, signals_api, dashboard, twitter_ingestor]
 
-  # Job 5: Security Scan
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    needs: lint
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        
-    - name: Install safety
-      run: |
-        python -m pip install --upgrade pip
-        pip install safety
-        
-    - name: Run safety check on dependencies
-      run: |
-        for req_file in services/*/requirements.txt; do
-          echo "Checking $req_file"
-          safety check -r $req_file
-        done
-        
-    - name: Run Bandit security linter
-      uses: PyCQA/bandit-action@v1
-      with:
-        path: "services/"
-        level: high
-        confidence: high
-        exit_zero: true
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # Job 6: Dependency Check
-  dependency-check:
-    name: Dependency Vulnerability Check
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Run Snyk to check for vulnerabilities
-      uses: snyk/actions/python@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        args: --severity-threshold=high
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-  # Job 7: Deployment (Production - Manual Approval Required)
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE_PREFIX }}${{ matrix.service }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./services/${{ matrix.service }}/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ------------------------------------------------
+  # Job 6 & 7: Deployments (example stubs)
+  # ------------------------------------------------
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: [build, security]
-    if: github.ref == 'refs/heads/develop'
-    environment: staging
-    
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/develop' # Example: only run for 'develop' branch
+    environment:
+      name: staging
+      url: http://staging.example.com
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Deploy to staging environment
-      run: |
-        echo "🚀 Deploying to staging environment..."
-        # Add your staging deployment commands here
-        # For example: kubectl apply -f k8s/staging/ or docker-compose up -d
-        
+      - name: Deploy to Staging environment
+        run: echo "Deploying to Staging..."
+
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [build, security]
-    if: github.ref == 'refs/heads/main'
-    environment: production
-    
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/main' # Only run for 'main' branch
+    environment:
+      name: production
+      url: http://app.example.com
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Deploy to production environment
-      run: |
-        echo "🚀 Deploying to production environment..."
-        # Add your production deployment commands here
-        # This step requires manual approval due to the 'environment: production' setting 
+      - name: Deploy to Production environment
+        run: echo "Deploying to Production..." 

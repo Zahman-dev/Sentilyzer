@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 # This ensures the common library can be found
 # For Docker, this path will be /common, for local dev it will be the relative path
@@ -7,34 +7,31 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "common"))
 )
 
+import hashlib
 import logging
 from datetime import datetime
 from typing import List, Optional
-import hashlib
 
-from fastapi import FastAPI, HTTPException, Depends, Security
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import and_, desc
+from sqlalchemy.orm import Session
 
+from app.db.models import ApiKey, RawArticle, SentimentScore, User
 from app.db.session import get_db
-from app.db.models import RawArticle, SentimentScore, ApiKey, User
+from app.logging_config import configure_logging, get_logger
 from app.schemas.sentiment import (
+    ErrorResponse,
+    HealthResponse,
+    SentimentData,
     SignalsRequest,
     SignalsResponse,
-    SentimentData,
-    HealthResponse,
-    ErrorResponse,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}',
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
+# Configure logging for the service
+configure_logging("signals_api")
+logger = get_logger(__name__)
 
 # Security
 security = HTTPBearer()

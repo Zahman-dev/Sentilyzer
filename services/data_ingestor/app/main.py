@@ -1,49 +1,26 @@
-import sys
 import os
-
-# This ensures the common library can be found
-# For Docker, this path will be /common, for local dev it will be the relative path
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "common"))
-)
-
-import asyncio
-import logging
+import sys
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 import feedparser
-import requests
 from bs4 import BeautifulSoup
-from sqlalchemy.orm import Session
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from tenacity import retry, stop_after_attempt, wait_exponential
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-# Add common to path - flexible for both Docker and local development
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if os.path.exists("/common"):
-    # Docker environment
-    common_path = "/common"
-else:
-    # Local development - go up to services/common
-    common_path = os.path.join(current_dir, "..", "..", "common")
+# Add common to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../common"))
 
-if common_path not in sys.path:
-    sys.path.insert(0, common_path)
+import asyncio
 
-from app.db.session import create_db_session
 from app.db.models import RawArticle
-from app.schemas.sentiment import RawArticleCreate
+from app.db.session import get_db_session
+from app.logging_config import configure_logging, get_logger
 
-# Configure structured JSON logging for production
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}',
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
+# Configure logging for the service
+configure_logging("data_ingestor")
+logger = get_logger(__name__)
 
 # Create FastAPI app for health checks
 app = FastAPI(title="Data Ingestor Service", version="1.0.0")
@@ -75,7 +52,7 @@ async def health_check():
     """
     try:
         # Test database connectivity
-        session = create_db_session()
+        session = get_db_session()
         session.execute("SELECT 1")
         session.close()
 
@@ -101,7 +78,7 @@ async def health_check():
 
 class DataIngestor:
     def __init__(self):
-        self.session = create_db_session()
+        self.session = get_db_session()
         self.stats = {
             "total_fetched": 0,
             "total_saved": 0,

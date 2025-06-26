@@ -1,25 +1,25 @@
+import asyncio
 import os
 import sys
-import logging
-import asyncio
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
 import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 # Add common module to path
 sys.path.append("/common")
 
-from app.db.session import get_database_session
-from app.db.models import RawArticle
-from sqlalchemy.exc import IntegrityError
-import tweepy
 import json
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+import tweepy
+from sqlalchemy.exc import IntegrityError
+
+from app.db.models import RawArticle
+from app.db.session import get_database_session
+from app.logging_config import configure_logging, get_logger
+
+# Configure logging for the service
+configure_logging("twitter_ingestor")
+logger = get_logger(__name__)
 
 
 class TwitterIngestor:
@@ -176,12 +176,12 @@ class TwitterIngestor:
         metrics = tweet.get("public_metrics", {})
         article_text = f"""
         Tweet: {tweet['text']}
-        
+
         Engagement Metrics:
         - Likes: {metrics.get('like_count', 0)}
         - Retweets: {metrics.get('retweet_count', 0)}
         - Replies: {metrics.get('reply_count', 0)}
-        
+
         Search Term: {search_term}
         Author ID: {tweet.get('author_id', 'unknown')}
         """

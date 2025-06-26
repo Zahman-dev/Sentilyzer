@@ -2,21 +2,17 @@
 Sentiment Processor Service - Batch Processing Worker
 """
 
-import os
 import sys
-import logging
 
 # Ensure /common is in the path for Docker environment
 if "/common" not in sys.path:
     sys.path.insert(0, "/common")
 
-# Configure structured JSON logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}',
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
+from app.logging_config import configure_logging, get_logger
+
+# Configure logging for the service
+configure_logging("sentiment_processor")
+logger = get_logger(__name__)
 
 
 def main():

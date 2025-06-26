@@ -4,25 +4,18 @@ Notification Processor - Utility for sending batch tasks to sentiment processor
 
 import os
 import sys
-import json
-import logging
 from typing import List
 
 # Add common to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if os.path.exists("/common"):
-    common_path = "/common"
-else:
-    common_path = os.path.join(current_dir, "..", "..", "common")
-
-if common_path not in sys.path:
-    sys.path.insert(0, common_path)
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../../common"))
 
 from celery import Celery
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from app.logging_config import configure_logging, get_logger
+
+# Configure logging for the service
+configure_logging("notification_processor")
+logger = get_logger(__name__)
 
 # Redis configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

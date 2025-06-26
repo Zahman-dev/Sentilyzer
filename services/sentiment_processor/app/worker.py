@@ -1,56 +1,25 @@
-import logging
-import sys
 import os
+import sys
 import time
-import json
-from typing import List, Tuple, Dict, Any
-
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from datetime import datetime, timezone
+from typing import List, Optional, Tuple
 
 # Redis and Celery imports
-import redis
 from celery import Celery
 from celery.signals import worker_ready
+from sqlalchemy import and_
+from sqlalchemy.orm import Session
 
-# FinBERT model imports
-try:
-    import torch
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+# Add common to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../common"))
 
-    MODEL_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"ML dependencies not available: {e}. Running in fallback mode.")
-    MODEL_AVAILABLE = False
+from app.db.models import RawArticle, SentimentScore
+from app.db.session import create_db_session
+from app.logging_config import configure_logging, get_logger
 
-# Import database modules using proper Python package structure
-# This approach works both in development and production Docker containers
-try:
-    # Production Docker container path
-    from common.db.session import create_db_session
-    from common.db.models import RawArticle, SentimentScore
-except ImportError:
-    try:
-        # Alternative path for different container configurations
-        sys.path.insert(
-            0, os.path.join(os.path.dirname(__file__), "..", "..", "common")
-        )
-        from app.db.session import create_db_session
-        from app.db.models import RawArticle, SentimentScore
-    except ImportError as e:
-        logging.error(f"Failed to import database modules: {e}")
-        # Fallback for development environment
-        sys.path.insert(0, "/common")
-        from app.db.session import create_db_session
-        from app.db.models import RawArticle, SentimentScore
-
-# Configure structured JSON logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp": "%(asctime)s", "name": "%(name)s", "level": "%(levelname)s", "message": "%(message)s"}',
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
+# Configure logging for the worker
+configure_logging("sentiment_processor_worker")
+logger = get_logger(__name__)
 
 # Redis configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -61,6 +30,21 @@ celery_app = Celery("sentiment_worker", broker=REDIS_URL, backend=REDIS_URL)
 
 # Global model instance (loaded once at startup)
 sentiment_analyzer = None
+
+# Constants for sentiment analysis
+BATCH_SIZE = 10
+MAX_RETRIES = 3
+RETRY_DELAY = 60
+
+# Initialize ML model
+try:
+    import torch
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    MODEL_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ML dependencies not available: {e}. Running in fallback mode.")
+    MODEL_AVAILABLE = False
 
 
 class FinBERTBatchAnalyzer:

@@ -1,25 +1,33 @@
-FROM python:3.10-slim
+# Multi-stage build for the Twitter Ingestor service
+FROM python:3.10.17-slim as base
 
-# Set working directory
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PYTHONPATH="/app"
+
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
+# Install uv and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    build-essential \
+    && pip install uv \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy common module first
-COPY services/common /common
+# ----------------- Builder Stage -----------------
+FROM base as builder
 
-# Copy requirements and install dependencies
-COPY services/twitter_ingestor/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+COPY services/ /app/services/
 
-# Install common dependencies
-RUN pip install --no-cache-dir -r /common/requirements.txt
+# Install dependencies for 'twitter_ingestor' from local project source
+RUN uv pip install --system --no-cache ".[twitter_ingestor]"
 
-# Copy application code
-COPY services/twitter_ingestor/app ./app
+# ----------------- Final Application Stage -----------------
+FROM builder as application
 
-# Run the application
-CMD ["python", "-m", "app.main"] 
+WORKDIR /app/services/twitter_ingestor/app
+
+CMD ["python", "main.py"] 

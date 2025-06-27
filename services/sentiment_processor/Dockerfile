@@ -1,84 +1,49 @@
-# Multi-stage build for production-ready Python microservice with ML dependencies
+# Multi-stage build for the Sentiment Processor service
 FROM python:3.10.17-slim as base
 
-# Set environment variables for Python and pip
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    PIP_DEFAULT_TIMEOUT=1000 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_RETRIES=5
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PYTHONPATH="/app"
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    postgresql-client \
-    curl \
-    wget \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Upgrade pip to latest version
-RUN pip install --upgrade pip setuptools wheel
-
-# Copy pip configuration for timeout optimization
-COPY pip.conf /etc/pip.conf
-
-# Create app directory
 WORKDIR /app
 
-# Stage 1: Dependencies
-FROM base as dependencies
+# Install uv and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    build-essential \
+    && pip install uv \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy and install common dependencies first (for better caching)
-COPY services/common/requirements.txt /tmp/common-requirements.txt
-COPY services/sentiment_processor/requirements.txt /tmp/service-requirements.txt
+# ----------------- Builder Stage -----------------
+FROM base as builder
 
-# Install common dependencies first with retry and timeout settings
-RUN pip install --no-cache-dir \
-    --timeout=1000 \
-    --retries=5 \
-    -r /tmp/common-requirements.txt
+COPY pyproject.toml .
+COPY services/ /app/services/
 
-# Install ML dependencies with CPU-only PyTorch and timeout settings
-# Using PyTorch CPU index to avoid downloading CUDA packages
-RUN pip install --no-cache-dir \
-    --timeout=1000 \
-    --retries=5 \
-    --extra-index-url https://download.pytorch.org/whl/cpu \
-    torch==2.1.1+cpu \
-    && pip install --no-cache-dir \
-    --timeout=1000 \
-    --retries=5 \
-    transformers==4.36.0 \
-    numpy==1.24.3 \
-    scikit-learn==1.3.2 \
-    asyncpg==0.29.0
+# STEP 1: Install Torch from its dedicated index first.
+# This avoids dependency confusion where uv might look for other packages
+# in the PyTorch index, which can cause errors.
+RUN uv pip install \
+    --system \
+    --no-cache \
+    "torch==2.1.1" \
+    --index-url https://download.pytorch.org/whl/cpu
 
-# Stage 2: Application
-FROM dependencies as application
+# STEP 2: Install the rest of the project dependencies from the default index (PyPI).
+# uv is smart enough to see that torch is already installed and will not fetch it again.
+RUN uv pip install --system --no-cache ".[sentiment_processor]"
 
-# Copy common modules with proper structure
-COPY services/common/app /app/common
-COPY services/common/alembic /app/alembic
-COPY services/common/alembic.ini /app/
+# Create a non-root user for security
+RUN groupadd -r worker && useradd -r -g worker worker
+RUN mkdir -p /home/worker/.cache && chown -R worker:worker /home/worker
+ENV TRANSFORMERS_CACHE="/home/worker/.cache"
+USER worker
 
-# Copy service-specific code
-COPY services/sentiment_processor/app /app/sentiment_processor
+# ----------------- Final Application Stage -----------------
+FROM builder as application
 
-# Create __init__.py files for proper Python package structure
-RUN touch /app/__init__.py && \
-    touch /app/common/__init__.py && \
-    touch /app/sentiment_processor/__init__.py
+WORKDIR /app
 
-# Set the working directory to the service
-WORKDIR /app/sentiment_processor
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
-
-# Run the worker
-CMD ["python", "-m", "celery", "worker", "-A", "worker.celery_app", "--loglevel=info"] 
+CMD ["celery", "-A", "services.sentiment_processor.app.worker.celery_app", "worker", "--loglevel=info"] 

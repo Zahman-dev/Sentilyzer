@@ -1,26 +1,34 @@
-FROM python:3.10-slim
+# Multi-stage build for the Dashboard service
+FROM python:3.10.17-slim as base
 
-# Set working directory
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PYTHONPATH="/app"
+
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Install uv
+RUN pip install uv
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# ----------------- Builder Stage -----------------
+FROM base as builder
 
-# Copy application code
-COPY app/ ./app/
+COPY pyproject.toml .
+COPY services/ /app/services/
 
-# Expose Streamlit port
+# Install dependencies for 'dashboard' from local project source
+RUN uv pip install --system --no-cache ".[dashboard]"
+
+# ----------------- Final Application Stage -----------------
+FROM builder as application
+
+WORKDIR /app/services/dashboard/app
+
 EXPOSE 8501
 
-# Set environment variables for Streamlit
 ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
 
-# Run Streamlit app
-CMD ["streamlit", "run", "app/main.py", "--server.port=8501", "--server.address=0.0.0.0"] 
+CMD ["streamlit", "run", "main.py"] 

@@ -1,234 +1,130 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
   postgres:
-    image: postgres:14
-    environment:
-      POSTGRES_USER: sentilyzer_user
-      POSTGRES_PASSWORD: sentilyzer_password
-      POSTGRES_DB: sentilyzer_db
+    image: postgres:15-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5434:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-sentilizer_db}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sentilyzer_user -d sentilyzer_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-sentilizer_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
-  # Redis for Celery
   redis:
     image: redis:7-alpine
-    ports:
-      - "6380:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
-  # Database Migration Service
   migration:
     build:
       context: .
-      dockerfile: services/common/Dockerfile
+      dockerfile: ./services/common/Dockerfile
     environment:
-      - DATABASE_URL=postgresql://sentilyzer_user:sentilyzer_password@postgres:5432/sentilyzer_db
-      - PYTHONPATH=/app
+      - POSTGRES_USER=${POSTGRES_USER:-user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-sentilizer_db}
+      - POSTGRES_HOST=postgres
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["alembic", "upgrade", "head"]
 
-  # Data Ingestor Service
-  data_ingestor:
-    build:
-      context: .
-      dockerfile: services/data_ingestor/Dockerfile
-    environment:
-      - DATABASE_URL=postgresql://sentilyzer_user:sentilyzer_password@postgres:5432/sentilyzer_db
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=INFO
-      - PYTHONPATH=/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migration:
-        condition: service_completed_successfully
-    restart: always
-
-  # Sentiment Processor Service (Original polling-based)
-  sentiment_processor:
-    build:
-      context: .
-      dockerfile: services/sentiment_processor/Dockerfile
-      args:
-        BUILDKIT_INLINE_CACHE: 1
-      target: application
-    environment:
-      - DATABASE_URL=postgresql://sentilyzer_user:sentilyzer_password@postgres:5432/sentilyzer_db
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=INFO
-      - PYTHONPATH=/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migration:
-        condition: service_completed_successfully
-    restart: always
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-        reservations:
-          memory: 2G
-    profiles:
-      - legacy  # Only run when explicitly requested
-
-  # Enhanced Sentiment Processor (Batch Processing Worker)
-  sentiment_processor_enhanced:
-    build:
-      context: .
-      dockerfile: services/sentiment_processor/Dockerfile
-      args:
-        BUILDKIT_INLINE_CACHE: 1
-      target: application
-    command: ["python", "-m", "sentiment_processor.main"]
-    environment:
-      - DATABASE_URL=postgresql://sentilyzer_user:sentilyzer_password@postgres:5432/sentilyzer_db
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=INFO
-      - PYTHONPATH=/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migration:
-        condition: service_completed_successfully
-    restart: always
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-        reservations:
-          memory: 2G
-
-  # Celery Worker
-  celery_worker:
-    build:
-      context: .
-      dockerfile: services/sentiment_processor/Dockerfile
-      args:
-        BUILDKIT_INLINE_CACHE: 1
-      target: application
-    command: ["python", "-m", "celery", "worker", "-A", "sentiment_processor.worker.celery_app", "--loglevel=info", "--concurrency=1", "--queues=sentiment_batch_queue"]
-    environment:
-      - DATABASE_URL=postgresql://sentilyzer_user:sentilyzer_password@postgres:5432/sentilyzer_db
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=INFO
-      - PYTHONPATH=/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migration:
-        condition: service_completed_successfully
-    restart: always
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-        reservations:
-          memory: 2G
-
-  # Celery Beat (Scheduler)
-  celery_beat:
-    build:
-      context: .
-      dockerfile: services/data_ingestor/Dockerfile
-    command: ["python", "-m", "celery", "beat", "-A", "data_ingestor.scheduler.celery_app", "--loglevel=info"]
-    environment:
-      - DATABASE_URL=postgresql://sentilyzer_user:sentilyzer_password@postgres:5432/sentilyzer_db
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=INFO
-      - PYTHONPATH=/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migration:
-        condition: service_completed_successfully
-    restart: always
-
-  # Signals API Service
   signals_api:
     build:
       context: .
-      dockerfile: services/signals_api/Dockerfile
-    environment:
-      - DATABASE_URL=postgresql://sentilyzer_user:sentilyzer_password@postgres:5432/sentilyzer_db
-      - API_SECRET_KEY=your-secret-key-here
-      - LOG_LEVEL=INFO
-      - PYTHONPATH=/app
+      dockerfile: ./services/signals_api/Dockerfile
     ports:
-      - "8888:8000"
+      - "127.0.0.1:8080:8000"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-sentilizer_db}
+      - POSTGRES_HOST=postgres
     depends_on:
-      postgres:
-        condition: service_healthy
       migration:
         condition: service_completed_successfully
-    restart: always
+      postgres:
+        condition: service_healthy
 
-  # Dashboard Service
-  dashboard:
-    build:
-      context: services/dashboard
-      dockerfile: Dockerfile
-    ports:
-      - "8501:8501"
-    depends_on:
-      - signals_api
-    restart: always
-    environment:
-      - STREAMLIT_SERVER_PORT=8501
-      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
-
-  # Twitter Ingestor Service (Demonstrates architecture extensibility)
   twitter_ingestor:
     build:
       context: .
-      dockerfile: services/twitter_ingestor/Dockerfile
+      dockerfile: ./services/twitter_ingestor/Dockerfile
     environment:
-      - DATABASE_URL=postgresql://sentilyzer_user:sentilyzer_password@postgres:5432/sentilyzer_db
-      - TWITTER_API_KEY=${TWITTER_API_KEY:-}
-      - TWITTER_API_SECRET=${TWITTER_API_SECRET:-}
-      - TWITTER_ACCESS_TOKEN=${TWITTER_ACCESS_TOKEN:-}
-      - TWITTER_ACCESS_TOKEN_SECRET=${TWITTER_ACCESS_TOKEN_SECRET:-}
-      - TWITTER_BEARER_TOKEN=${TWITTER_BEARER_TOKEN:-}
-      - LOG_LEVEL=INFO
+      - POSTGRES_USER=${POSTGRES_USER:-user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-sentilizer_db}
+      - POSTGRES_HOST=postgres
     depends_on:
-      postgres:
-        condition: service_healthy
       migration:
         condition: service_completed_successfully
-    restart: "no"  # Run once for demo
-    volumes:
-      - ./services/twitter_ingestor:/app
-      - ./services/common:/common
+      postgres:
+        condition: service_healthy
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: ./services/sentiment_processor/Dockerfile
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-sentilizer_db}
+      - POSTGRES_HOST=postgres
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: ./services/data_ingestor/Dockerfile
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-sentilizer_db}
+      - POSTGRES_HOST=postgres
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: ./services/dashboard/Dockerfile
+    ports:
+      - "127.0.0.1:8501:8501"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-sentilizer_db}
+      - POSTGRES_HOST=postgres
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
-
-networks:
-  default:
-    driver: bridge 
+  redis_data:

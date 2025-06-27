@@ -1,22 +1,29 @@
-FROM python:3.10.17-slim
+# Multi-stage build for a shared library-like service
+FROM python:3.10.17-slim as base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PYTHONPATH="/app"
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+# Install uv
+RUN pip install uv
 
-# Copy requirements and install Python dependencies
-COPY services/common/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# ----------------- Builder Stage -----------------
+FROM base as builder
 
-# Copy common code
-COPY services/common .
+COPY pyproject.toml .
+# Copy all service code needed for local installation
+COPY services/ /app/services/
 
-# Set PYTHONPATH to include the app directory
-ENV PYTHONPATH=/app
+# Install only the 'common' dependencies from the local project source
+RUN uv pip install --system --no-cache ".[common]"
 
-# Default command
-CMD ["alembic", "upgrade", "head"] 
+# ----------------- Final Application Stage -----------------
+FROM builder as application
+
+# This image doesn't run on its own.
+CMD ["/bin/true"] 

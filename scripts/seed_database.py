@@ -5,10 +5,10 @@ Database Seeding Script for Sentilyzer Platform
 This script populates the database with sample data for testing purposes.
 """
 
-import sys
 import os
-from datetime import datetime, timedelta
 import random
+import sys
+from datetime import datetime, timedelta
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -16,57 +16,56 @@ sys.path.append(
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "services", "common")
 )
 
+from services.common.app.db.models import RawArticle, SentimentScore, User
 from services.common.app.db.session import create_db_session
-from services.common.app.db.models import RawArticle, SentimentScore
 
 # Sample financial headlines and content
-SAMPLE_ARTICLES = [
+sample_articles = [
     {
-        "headline": "Apple Reports Strong Q4 Earnings, Beats Expectations",
-        "content": "Apple Inc. reported better-than-expected quarterly earnings, driven by strong iPhone sales and growth in services revenue. The company's stock rose in after-hours trading.",
-        "source": "reuters",
+        "source": "Reuters",
+        "content": (
+            "Apple Inc. reported better-than-expected quarterly earnings, "
+            "driven by strong iPhone sales and growth in services. "
+            "The tech giant's revenue rose 8% to $90.1 billion."
+        ),
+        "created_at": "2023-05-01T14:30:00",
         "sentiment": ("positive", 0.8),
     },
     {
-        "headline": "Tesla Stock Falls After Production Miss",
-        "content": "Tesla shares declined after the electric vehicle maker reported lower-than-expected production numbers for the quarter. Supply chain issues continue to impact manufacturing.",
-        "source": "reuters",
+        "source": "Reuters",
+        "content": (
+            "Tesla faces production challenges in China market, reporting "
+            "lower-than-expected production numbers for the quarter. "
+            "Supply chain issues continue to impact manufacturing."
+        ),
+        "created_at": "2023-05-02T09:15:00",
         "sentiment": ("negative", -0.6),
     },
     {
-        "headline": "Federal Reserve Holds Interest Rates Steady",
-        "content": "The Federal Reserve maintained its benchmark interest rate, citing mixed economic signals. Markets showed little reaction to the widely anticipated decision.",
-        "source": "investing.com",
-        "sentiment": ("neutral", 0.1),
-    },
-    {
-        "headline": "Microsoft Azure Revenue Surges 40% in Cloud Growth",
-        "content": "Microsoft's cloud computing division Azure reported 40% revenue growth, outpacing competitor Amazon Web Services. The strong performance boosted Microsoft shares in pre-market trading.",
-        "source": "reuters",
+        "source": "Reuters",
+        "content": (
+            "Microsoft's cloud business shows strong growth, beating analyst "
+            "expectations. Azure revenue increased by 27% year-over-year."
+        ),
+        "created_at": "2023-05-03T11:45:00",
         "sentiment": ("positive", 0.7),
     },
     {
-        "headline": "Oil Prices Drop on Recession Fears",
-        "content": "Crude oil prices fell sharply amid growing concerns about a potential economic recession. Energy stocks were among the worst performers in today's trading session.",
-        "source": "investing.com",
-        "sentiment": ("negative", -0.5),
-    },
-    {
-        "headline": "Amazon Announces Major Investment in AI Research",
-        "content": "Amazon revealed plans to invest billions in artificial intelligence research and development. The initiative aims to enhance the company's cloud services and e-commerce capabilities.",
-        "source": "reuters",
+        "source": "Reuters",
+        "content": (
+            "Amazon's AWS continues to dominate cloud market, with Q1 revenue "
+            "exceeding $21 billion. Growth remains steady at 16%."
+        ),
+        "created_at": "2023-05-04T16:20:00",
         "sentiment": ("positive", 0.6),
     },
     {
-        "headline": "Inflation Data Shows Modest Cooling Trend",
-        "content": "Latest inflation figures indicate a slight cooling in price pressures, though rates remain above the Federal Reserve's target. Financial markets reacted positively to the news.",
-        "source": "investing.com",
-        "sentiment": ("positive", 0.4),
-    },
-    {
-        "headline": "Banking Sector Faces Regulatory Scrutiny",
-        "content": "Major banks are under increased regulatory scrutiny following recent market volatility. New compliance requirements may impact profitability in the near term.",
-        "source": "reuters",
+        "source": "Reuters",
+        "content": (
+            "Meta faces advertising headwinds amid privacy changes and economic "
+            "uncertainty. Ad revenue growth slows to 6%."
+        ),
+        "created_at": "2023-05-05T13:10:00",
         "sentiment": ("negative", -0.3),
     },
 ]
@@ -111,11 +110,18 @@ def seed_database():
         session.query(RawArticle).delete()
         session.commit()
 
+        # Create test user
+        user = User(
+            email="test@example.com", is_active=True, created_at=datetime.utcnow()
+        )
+        session.add(user)
+        session.commit()
+
         # Create sample articles
         print("📰 Creating sample articles...")
         articles = []
 
-        for i, article_data in enumerate(SAMPLE_ARTICLES):
+        for i, article_data in enumerate(sample_articles):
             # Spread articles over the last 48 hours
             offset_hours = i * 6  # Every 6 hours
             article = create_sample_article(article_data, offset_hours)

@@ -6,36 +6,75 @@ This script generates secure API keys for users and stores them in the database.
 Phase 2 Implementation: Production-ready user and API key management.
 """
 
+import hashlib
+import os
 import secrets
 import string
-import hashlib
 import sys
-import os
 from datetime import datetime, timedelta
 from typing import Optional
+from uuid import uuid4
 
-# Add the path to the common module
-sys.path.append(os.path.join(os.path.dirname(__file__), "../services/common"))
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+# Add common module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), "../common"))
 
 try:
-    from sqlalchemy.orm import Session
-    from app.db.session import get_db_engine, create_session
-    from app.db.models import User, ApiKey
     import bcrypt
+    from sqlalchemy.orm import Session
+
+    from app.db.models import ApiKey, User
+    from app.db.session import create_session, get_db_engine
 except ImportError as e:
     print(f"❌ Error importing required modules: {e}")
     print("Make sure you're running this from the project root directory.")
     sys.exit(1)
 
 
-def generate_api_key() -> str:
-    """
-    Generate a cryptographically secure API key with Sentilyzer prefix.
-    """
-    alphabet = string.ascii_letters + string.digits
-    random_part = "".join(secrets.choice(alphabet) for _ in range(32))
-    api_key = f"sntzr_{random_part}"
-    return api_key
+def generate_api_key(email: str) -> str:
+    """Generate a new API key for a user."""
+    # Database configuration
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/sentilyzer"
+    )
+
+    # Create database engine and session
+    engine = create_engine(DATABASE_URL)
+    SessionLocal = sessionmaker(bind=engine)
+    session = SessionLocal()
+
+    try:
+        # Check if user exists
+        user = session.query(User).filter(User.email == email).first()
+        if not user:
+            print("Error: User not found")
+            return ""
+
+        # Generate new API key
+        api_key = str(uuid4())
+
+        # Create API key record
+        new_key = ApiKey(
+            key=api_key, user_id=user.id, created_at=datetime.utcnow(), is_active=True
+        )
+
+        # Save to database
+        session.add(new_key)
+        session.commit()
+
+        print("Successfully generated API key")
+        print("API Key:", api_key)
+
+        return api_key
+
+    except Exception as e:
+        print("Error generating API key:", str(e))
+        return ""
+
+    finally:
+        session.close()
 
 
 def hash_api_key(api_key: str) -> str:
@@ -78,7 +117,7 @@ def create_user_and_api_key(
         session.flush()  # Get the user ID
 
         # Generate API key
-        raw_api_key = generate_api_key()
+        raw_api_key = generate_api_key(email)
         key_hash = hash_api_key(raw_api_key)
 
         # Calculate expiration date
@@ -179,4 +218,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 2:
+        print("Usage: python generate_api_key.py <email>")
+        sys.exit(1)
+
+    email = sys.argv[1]
+    generate_api_key(email)

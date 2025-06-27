@@ -113,115 +113,98 @@ Bu proje, sadece belirli teknolojileri kullanmakla kalmaz, aynı zamanda bu seç
 +---------------------------+
 ```
 
-### Problem
-Docker containers often face Python import path issues when sharing modules between microservices, especially in development environments where linters show import errors.
+## 🚀 Modern Development Environment Setup
 
-### Solution
-We implement industry best practices for Docker Python module management:
-
-#### 1. Multi-Stage Docker Builds
-```dockerfile
-FROM python:3.10.17-slim as base
-ENV PYTHONPATH=/app
-
-FROM base as dependencies
-# Install dependencies first for better caching
-
-FROM dependencies as application
-# Copy modules with proper structure
-COPY services/common/app /app/common
-COPY services/service_name/app /app/service_name
-```
-
-#### 2. Proper Python Package Structure
-```
-/app/
-├── __init__.py
-├── common/
-│   ├── __init__.py
-│   ├── db/
-│   └── schemas/
-└── service_name/
-    ├── __init__.py
-    └── main.py
-```
-
-#### 3. Import Strategy
-```python
-# Production Docker container path
-from common.db.session import create_db_session
-from common.db.models import RawArticle
-```
-
-#### 4. Development Environment Configuration
-VS Code settings in `.vscode/settings.json`:
-```json
-{
-    "python.analysis.extraPaths": [
-        "./services/common/app",
-        "./services/sentiment_processor/app"
-    ],
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportMissingImports": "none"
-    }
-}
-```
-
-## Development Setup
+This project uses a modern Python setup with `pyproject.toml` for dependency management and `ruff` for code quality.
 
 ### Prerequisites
-- Docker and Docker Compose
-- VS Code (recommended) with Python extension
-- Minimum 4GB RAM for Docker
-- Stable internet connection for ML package downloads
+- Python 3.10+
+- [uv](https://github.com/astral-sh/uv): An extremely fast Python package installer and resolver.
+  ```bash
+  # On macOS and Linux
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+- Docker and Docker Compose (for running the full system)
+- Pre-commit for git hooks:
+  ```bash
+  pip install pre-commit
+  ```
 
-### Quick Start
+### 1. Local Setup (with `uv`)
 
-#### Option 1: Using Optimized Build Script (Recommended)
+This is the recommended way for local development and running tests.
+
 ```bash
-# Build all services with timeout optimization
-./scripts/build_with_retry.sh
+# 1. Create and activate a virtual environment
+uv venv
 
-# Or build specific service
-./scripts/build_with_retry.sh -s sentiment-processor
+# On macOS/Linux
+source .venv/bin/activate
+# On Windows
+.venv\Scripts\activate
 
-# Start services
-docker-compose up
+# 2. Install all project dependencies (including all services and dev tools)
+uv pip install -e ".[dev]"
+
+# 3. Set up pre-commit hooks
+pre-commit install
 ```
 
-#### Option 2: Standard Docker Compose
+### 2. Running Services
+
+#### With Docker (Recommended for Production & Staging)
+The easiest way to run the entire platform is with Docker Compose. It handles the database, Redis, and all microservices.
+
 ```bash
-# Build and start services
+# Build and start all services
 docker-compose up --build
 ```
 
-#### Option 3: Manual Build with Optimization
+**Access Points:**
+- **Dashboard**: `http://localhost:8501`
+- **Signals API Docs**: `http://localhost:8888/docs`
+
+#### Individually (for focused development)
+If you want to run a single service locally (e.g., `signals_api`):
+
 ```bash
-# Build with timeout settings
-DOCKER_BUILDKIT=1 docker-compose build --no-cache --pull
-docker-compose up
+# Make sure you have installed dependencies as in step 1
+# Run the FastAPI server with uvicorn
+uvicorn services.signals_api.app.main:app --host 0.0.0.0 --port 8888 --reload
+```
+You will need a running PostgreSQL and Redis instance for this. The simplest way is to run them with Docker:
+`docker-compose up -d postgres redis`
+
+## 🛠️ Developer Workflow
+
+### Code Quality
+We use `ruff` for linting and formatting.
+
+```bash
+# Format all files
+ruff format .
+
+# Check for linting errors and apply fixes
+ruff check . --fix
+```
+The pre-commit hooks will run these checks automatically before each commit.
+
+### Testing
+We use `pytest` for testing.
+
+```bash
+# Run all tests
+pytest
 ```
 
-### 🚨 Docker Timeout Issues?
-If you encounter timeout errors during build, see [DOCKER_TIMEOUT_SOLUTIONS.md](./DOCKER_TIMEOUT_SOLUTIONS.md) for comprehensive solutions.
+### Database Migrations
+We use `alembic` for database schema migrations. Migrations are located in `services/common/alembic/versions`.
 
-### Access Points
-- Dashboard: `http://localhost:8501`
-- API endpoints: `http://localhost:8888`
-
-### Development Environment
-For development with proper import resolution:
-
-1. Open the project in VS Code
-2. The `.vscode/settings.json` is pre-configured for Docker development
-3. Linter errors for Docker-specific imports are suppressed in development
-4. All imports work correctly in production containers
-
-### Container Structure Benefits
-- **Isolation**: Each service runs in its own container
-- **Scalability**: Services can be scaled independently
-- **Consistency**: Same environment in development and production
-- **Performance**: Multi-stage builds optimize image size and build time
+To apply migrations, it's best to run them inside the `signals_api` container to ensure the correct environment.
+```bash
+# Apply migrations
+docker-compose exec signals_api alembic upgrade head
+```
 
 ## Services
 

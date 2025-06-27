@@ -1,0 +1,210 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentilyzer"
+version = "0.1.0"
+description = "A modern Python microservices project for sentiment analysis."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Sentilyzer Team", email = "contact@sentilyzer.dev" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Framework :: FastAPI",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.urls]
+"Homepage" = "https://github.com/oguzhancoban/Sentilyzer"
+
+[project.optional-dependencies]
+common = [
+    "fastapi==0.104.1",
+    "sqlalchemy==2.0.23",
+    "alembic==1.12.1",
+    "pydantic==2.5.0",
+    "psycopg2-binary==2.9.9",
+    "python-dotenv==1.0.0",
+    "bcrypt==4.0.1",
+    "python-jose[cryptography]==3.3.0",
+    "passlib[bcrypt]==1.7.4",
+    "celery==5.3.4",
+    "redis==5.0.1",
+    "tenacity==8.2.3",
+    "httpx==0.25.2",
+]
+dashboard = [
+    "sentilyzer[common]",
+    "streamlit==1.28.1",
+    "requests==2.31.0",
+    "pandas==2.1.3",
+    "plotly==5.17.0",
+    "python-dateutil==2.8.2",
+]
+data_ingestor = [
+    "sentilyzer[common]",
+    "feedparser==6.0.10",
+    "requests==2.31.0",
+    "beautifulsoup4==4.12.2",
+    "lxml==4.9.3",
+    "apscheduler==3.10.4",
+    "uvicorn==0.24.0",
+    "django-celery-beat==2.6.0",
+]
+sentiment_processor = [
+    "sentilyzer[common]",
+    # IMPORTANT: To install the CPU-only version of torch, you may need to use a specific index URL.
+    # For pip, run: pip install torch==2.1.1 --extra-index-url https://download.pytorch.org/whl/cpu
+    "torch==2.1.1",
+    "transformers==4.36.0",
+    "numpy==1.24.3",
+    "scikit-learn==1.3.2",
+    "asyncpg==0.29.0",
+]
+signals_api = [
+    "sentilyzer[common]",
+    "uvicorn==0.24.0",
+    "requests==2.31.0",
+]
+twitter_ingestor = [
+    "sentilyzer[common]",
+    "tweepy==4.14.0",
+    "asyncio-throttle==1.0.2",
+    "aiohttp==3.9.1",
+    "python-dateutil==2.8.2",
+]
+all = [
+    "sentilyzer[dashboard]",
+    "sentilyzer[data_ingestor]",
+    "sentilyzer[sentiment_processor]",
+    "sentilyzer[signals_api]",
+    "sentilyzer[twitter_ingestor]",
+]
+dev = [
+    "sentilyzer[all]",
+    "ruff",
+    "uv",
+    "mypy",
+    "types-requests",
+    "types-redis",
+    "types-freezegun",
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "testcontainers",
+    "Faker",
+    "freezegun",
+    "asyncpg",
+    "fakeredis",
+    "safety",
+    "bandit[toml]",
+    "pre-commit",
+]
+
+[tool.setuptools.package-dir]
+common = "services/common/app"
+dashboard = "services/dashboard/app"
+data_ingestor = "services/data_ingestor/app"
+sentiment_processor = "services/sentiment_processor/app"
+signals_api = "services/signals_api/app"
+twitter_ingestor = "services/twitter_ingestor/app"
+
+[tool.ruff]
+line-length = 90
+target-version = "py310"
+src = ["services", "tests"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "A",      # flake8-builtins
+    "UP",     # pyupgrade
+    "SIM",    # flake8-simplify
+    "PT",     # flake8-pytest-style
+    "D",      # pydocstyle
+    "RUF",    # Ruff-specific rules
+]
+ignore = [
+    "D100", "D101", "D102", "D103", "D104", "D105", "D107",
+    "B008",
+    "E402",
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["S101", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "services"]
+combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --cov=services --cov-report=term-missing --cov-fail-under=80"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.coverage.run]
+branch = true
+source = ["services"]
+omit = [
+    "tests/*",
+    "**/__init__.py",
+    "**/alembic/*",
+    "*_test.py",
+    "**/main.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "...",
+]
+fail_under = 80
+
+[tool.poetry.group.data_ingestor.dependencies]
+celery = "^5.3.4"
+redis = "^5.0.4"
+requests = "^2.31.0"
+beautifulsoup4 = "^4.12.3"
+feedparser = "^6.0.11"
+schedule = "^1.2.2"
+django-celery-beat = "^2.6.0"
+
+[tool.poetry.group.sentiment_processor.dependencies]
+celery = "^5.3.4"
+redis = "^5.0.4"

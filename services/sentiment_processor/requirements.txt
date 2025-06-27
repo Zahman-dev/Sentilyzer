@@ -1,9 +1,0 @@
-# Sentiment processor specific dependencies
-# Using CPU-only PyTorch to reduce download size and avoid CUDA dependencies
-torch==2.1.1+cpu
-transformers==4.36.0
-numpy==1.24.3
-scikit-learn==1.3.2
-
-# Phase 3: PostgreSQL async notifications
-asyncpg==0.29.0 

@@ -2,54 +2,51 @@
 Sentiment Processor Service - Batch Processing Worker
 """
 
-import sys
+import os
+import time
 
-# Ensure /common is in the path for Docker environment
-if "/common" not in sys.path:
-    sys.path.insert(0, "/common")
+from services.common.app.logging_config import configure_logging, get_logger
+from services.sentiment_processor.app.worker import celery_app
 
-from app.logging_config import configure_logging, get_logger
-
-# Configure logging for the service
-configure_logging("sentiment_processor")
-logger = get_logger(__name__)
+# Configure logging
+configure_logging(service_name="sentiment_processor_main")
+logger = get_logger("sentiment_processor_main")
 
 
 def main():
     """
-    Main entry point for sentiment processor service.
-
-    This service now operates as a Celery worker that processes batch sentiment analysis tasks.
-    The worker is defined in worker.py and handles:
-    1. Receiving batch tasks from Redis queue
-    2. Processing multiple articles in batches
-    3. Robust error handling with poison pill prevention
+    Main function to start the Celery worker for sentiment processing.
+    This function is kept for legacy purposes and direct execution. The primary
+    entry point for Docker is the `celery_worker` service.
     """
-    logger.info("Starting Sentiment Processor Service - Batch Processing Mode")
+    logger.info("Starting sentiment processor worker...")
 
-    # Import the worker module to ensure it's loaded
+    # Ensure Redis is available
+    redis_url = os.environ.get("REDIS_URL")
+    if not redis_url:
+        logger.error("REDIS_URL environment variable not set. Exiting.")
+        return
+
+    # The worker can be started using the celery_app instance
+    # The command-line equivalent is:
+    # celery -A services.sentiment_processor.app.worker.celery_app worker --loglevel=info
     try:
-        from app.worker import celery_app
+        # A simple check to see if we can connect to the broker
+        with celery_app.connection() as connection:
+            logger.info("Successfully connected to the broker.")
 
-        logger.info("Worker module loaded successfully")
-
-        # Start the Celery worker
-        logger.info("Starting Celery worker for batch sentiment processing...")
-        celery_app.worker_main(
-            [
-                "worker",
-                "--loglevel=info",
-                "--concurrency=1",  # Single worker to manage memory efficiently
-                "--queues=sentiment_batch_queue",
-            ]
+        logger.info(
+            "Celery app is configured. The worker should be started via the "
+            "'celery_worker' service in docker-compose."
         )
+        # In a non-Docker setup, you might run the worker directly:
+        # celery_app.worker_main(argv=['worker', '--loglevel=info'])
 
-    except ImportError as e:
-        logger.error(f"Failed to import worker module: {e}")
-        sys.exit(1)
     except Exception as e:
-        logger.error(f"Error starting worker: {e}")
-        sys.exit(1)
+        logger.error(f"Failed to connect to the broker at {redis_url}: {e}")
+        logger.error(
+            "Please ensure Redis is running and accessible.", exc_info=True
+        )
 
 
 if __name__ == "__main__":

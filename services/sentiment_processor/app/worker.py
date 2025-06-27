@@ -5,21 +5,23 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 # Redis and Celery imports
-from celery import Celery
+from celery import Celery, Task
 from celery.signals import worker_ready
+from celery.utils.log import get_task_logger
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Add common to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../common"))
 
-from app.db.models import RawArticle, SentimentScore
-from app.db.session import create_db_session
-from app.logging_config import configure_logging, get_logger
+from services.common.app.db.models import RawArticle, SentimentScore
+from services.common.app.db.session import create_db_session
+from services.common.app.logging_config import configure_logging, get_logger
 
-# Configure logging for the worker
-configure_logging("sentiment_processor_worker")
-logger = get_logger(__name__)
+# Configure logging
+configure_logging(service_name="sentiment_worker")
+logger = get_logger("sentiment_worker")
 
 # Redis configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

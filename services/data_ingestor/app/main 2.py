@@ -13,15 +13,14 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../common"))
 
 import asyncio
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from services.common.app.db.models import RawArticle
-from services.common.app.db.session import create_db_session
-from services.common.app.logging_config import configure_logging, get_logger
+from app.db.models import RawArticle
+from app.db.session import get_db_session
+from app.logging_config import configure_logging, get_logger
 
 # Configure logging for the service
-configure_logging(service_name="data_ingestor_main")
-logger = get_logger("data_ingestor_main")
+configure_logging("data_ingestor")
+logger = get_logger(__name__)
 
 # Create FastAPI app for health checks
 app = FastAPI(title="Data Ingestor Service", version="1.0.0")
@@ -53,7 +52,7 @@ async def health_check():
     """
     try:
         # Test database connectivity
-        session = create_db_session()
+        session = get_db_session()
         session.execute("SELECT 1")
         session.close()
 
@@ -79,7 +78,7 @@ async def health_check():
 
 class DataIngestor:
     def __init__(self):
-        self.session = create_db_session()
+        self.session = get_db_session()
         self.stats = {
             "total_fetched": 0,
             "total_saved": 0,
@@ -115,13 +114,13 @@ class DataIngestor:
 
                     # Parse published date
                     published_at = self.parse_published_date(entry)
-                    full_content = f"Title: {entry.title}\nURL: {entry.link}\nSummary: {article_text}"
 
                     article_data = {
                         "source": feed_config["source"],
-                        "content": full_content,
-                        "created_at": published_at,
-                        "user_id": 1,  # Placeholder user
+                        "article_url": entry.link,
+                        "headline": entry.title,
+                        "article_text": article_text,
+                        "published_at": published_at,
                     }
 
                     articles.append(article_data)
@@ -189,38 +188,29 @@ class DataIngestor:
                 # Check if article already exists
                 existing = (
                     self.session.query(RawArticle)
-                    .filter(RawArticle.content == article_data["content"])
+                    .filter(RawArticle.article_url == article_data["article_url"])
                     .first()
                 )
 
                 if existing:
                     logger.debug(
-                        f"Article already exists: {article_data.get('content', 'unknown')[:50]}..."
+                        f"Article already exists: {article_data['article_url']}"
                     )
                     continue
 
                 # Create new article
-                article = RawArticle(
-                    source=article_data["source"],
-                    content=article_data["content"],
-                    created_at=article_data["created_at"],
-                    user_id=article_data["user_id"],
-                    processed=False,
-                    has_error=False,
-                )
+                article = RawArticle(**article_data)
                 self.session.add(article)
                 saved_count += 1
 
             except Exception as e:
                 logger.error(
-                    f"Error saving article {article_data.get('content', 'unknown')[:50]}...: {str(e)}"
+                    f"Error saving article {article_data.get('article_url', 'unknown')}: {str(e)}"
                 )
                 self.stats["errors"] += 1
                 # Mark article with error for later investigation
                 try:
-                    error_article = RawArticle(
-                        **article_data, has_error=True, processed=False
-                    )
+                    error_article = RawArticle(**article_data, has_error=True)
                     self.session.add(error_article)
                 except Exception:
                     pass  # If we can't even save the error record, skip it

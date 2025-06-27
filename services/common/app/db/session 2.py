@@ -1,8 +1,7 @@
 import os
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
@@ -10,7 +9,7 @@ load_dotenv()
 # Database configuration
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://user:password@postgres:5432/sentilizer_db",
+    "postgresql://sentilyzer_user:sentilyzer_password@localhost:5432/sentilyzer_db",
 )
 
 # Create engine

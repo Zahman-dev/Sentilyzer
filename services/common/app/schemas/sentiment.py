@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -12,7 +13,20 @@ class SignalsRequest(BaseModel):
     end_date: datetime = Field(..., description="End date for analysis in ISO format")
 
 
+class SentimentAnalysisRequest(BaseModel):
+    text: str = Field(..., description="Text to be analyzed for sentiment.")
+
+
 # Response schemas
+class SentimentAnalysisResponse(BaseModel):
+    sentiment_score: float = Field(
+        ..., ge=-1.0, le=1.0, description="Calculated sentiment score."
+    )
+    sentiment_label: str = Field(
+        ..., description="Sentiment label: positive, negative, or neutral."
+    )
+
+
 class SentimentData(BaseModel):
     article_url: str
     headline: str
@@ -79,6 +93,9 @@ class SentimentScoreBase(BaseModel):
     sentiment_score: float = Field(..., ge=-1.0, le=1.0)
     sentiment_label: str
     model_version: str = Field(default="placeholder-v1.0")
+
+    class Config:
+        protected_namespaces = ()
 
 
 class SentimentScoreCreate(SentimentScoreBase):

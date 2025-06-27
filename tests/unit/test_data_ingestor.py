@@ -1,6 +1,6 @@
-import unittest
-import sys
 import os
+import sys
+import unittest
 from datetime import datetime
 from unittest.mock import Mock, patch
 

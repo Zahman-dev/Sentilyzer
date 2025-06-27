@@ -1,19 +1,22 @@
+import asyncio
+import json
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+
+import asyncpg
 import pytest
 import requests
-import asyncio
-import asyncpg
-import json
-from datetime import datetime, timezone
-import sys
-import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 # Add common to path for testing
 sys.path.append(
     os.path.join(os.path.dirname(__file__), "..", "..", "services", "common")
 )
 
-from app.db.session import create_db_session
-from app.db.models import RawArticle, SentimentScore
+from app.db.models import ApiKey, RawArticle, SentimentScore, User
+from app.db.session import get_database_session
 
 
 class TestPhase3Features:
@@ -38,6 +41,22 @@ class TestPhase3Features:
     def database_url(self):
         """Database URL for direct testing"""
         return "postgresql://sentilyzer_user:sentilyzer_password@localhost:5432/sentilyzer_db"
+
+    @pytest.fixture
+    def db_session(self):
+        """Create a test database session."""
+        DATABASE_URL = os.getenv(
+            "TEST_DATABASE_URL",
+            "postgresql://postgres:postgres@localhost:5432/sentilyzer_test",
+        )
+
+        engine = create_engine(DATABASE_URL)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        yield session
+
+        session.close()
 
     def test_signals_api_health(self, api_base_url):
         """Test that the signals API is running and healthy"""
@@ -65,7 +84,7 @@ class TestPhase3Features:
         Test that Twitter ingestor creates data in the correct format.
         This demonstrates architecture extensibility.
         """
-        with create_db_session() as session:
+        with get_database_session() as session:
             # Look for Twitter-sourced articles
             twitter_articles = (
                 session.query(RawArticle)
@@ -138,7 +157,7 @@ class TestPhase3Features:
 
             # Insert a test article using synchronous session
             test_article = None
-            with create_db_session() as session:
+            with get_database_session() as session:
                 test_article = RawArticle(
                     source="test_phase3",
                     article_url=f"https://test.com/article_{datetime.now().timestamp()}",
@@ -173,7 +192,7 @@ class TestPhase3Features:
             await conn.close()
 
             # Clean up test article
-            with create_db_session() as session:
+            with get_database_session() as session:
                 session.delete(session.get(RawArticle, article_id))
                 session.commit()
 
@@ -230,7 +249,7 @@ class TestPhase3Features:
         Test the complete data pipeline: Raw article -> Sentiment analysis -> API output.
         This verifies the end-to-end Phase 3 system.
         """
-        with create_db_session() as session:
+        with get_database_session() as session:
             # Find a processed article (one that has sentiment scores)
             processed_article = session.query(RawArticle).join(SentimentScore).first()
 
@@ -260,7 +279,7 @@ class TestPhase3Features:
         """
         Test overall system health by checking data flow statistics.
         """
-        with create_db_session() as session:
+        with get_database_session() as session:
             # Count total articles
             total_articles = session.query(RawArticle).count()
 
@@ -304,3 +323,78 @@ class TestPhase3Features:
             # Ensure error rate is reasonable
             if total_articles > 10:  # Only check if we have sufficient data
                 assert error_rate < 20, f"Error rate too high: {error_rate:.1f}%"
+
+    def test_article_processing(self, db_session: Session):
+        """Test article processing functionality."""
+        # Create test user
+        user = User(
+            email="test@example.com", is_active=True, created_at=datetime.utcnow()
+        )
+        db_session.add(user)
+        db_session.commit()
+
+        # Create test article
+        article = RawArticle(
+            user_id=user.id,
+            source="test",
+            content="This is a test article",
+            created_at=datetime.utcnow(),
+            processed=False,
+        )
+        db_session.add(article)
+        db_session.commit()
+
+        # Create test sentiment score
+        score = SentimentScore(
+            article_id=article.id,
+            sentiment_score=0.8,
+            sentiment_label="positive",
+            created_at=datetime.utcnow(),
+        )
+        db_session.add(score)
+        db_session.commit()
+
+        # Verify processing
+        assert article.processed is True
+        assert score.sentiment_score > 0
+
+        # Clean up
+        db_session.delete(score)
+        db_session.delete(article)
+        db_session.delete(user)
+        db_session.commit()
+
+    def test_api_key_management(self, db_session: Session):
+        """Test API key management."""
+        # Create test user
+        user = User(
+            email="test@example.com", is_active=True, created_at=datetime.utcnow()
+        )
+        db_session.add(user)
+        db_session.commit()
+
+        # Create API key
+        api_key = ApiKey(
+            key="test_key",
+            user_id=user.id,
+            created_at=datetime.utcnow(),
+            is_active=True,
+        )
+        db_session.add(api_key)
+        db_session.commit()
+
+        # Verify API key
+        assert api_key.is_active is True
+        assert api_key.user_id == user.id
+
+        # Deactivate API key
+        api_key.is_active = False
+        db_session.commit()
+
+        # Verify deactivation
+        assert api_key.is_active is False
+
+        # Clean up
+        db_session.delete(api_key)
+        db_session.delete(user)
+        db_session.commit()

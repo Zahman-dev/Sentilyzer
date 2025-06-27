@@ -1,6 +1,6 @@
-import unittest
-import sys
 import os
+import sys
+import unittest
 
 # Add parent directories to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))

@@ -171,3 +171,9 @@ logs/
 # Alembic versions (keep directory structure but ignore specific version files if needed)
 # We'll track version files but you can uncomment this if you want to ignore them
 # services/common/alembic/versions/*.py 
+
+# Build artifacts
+*.egg-info/
+
+# VS Code
+.vscode/ 

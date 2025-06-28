@@ -3,12 +3,11 @@
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 import feedparser
 from bs4 import BeautifulSoup
 from celery import Celery
-from sqlalchemy import and_
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Add project root to path for imports
@@ -63,7 +62,7 @@ class DataIngestor:
     @retry(
         stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10)
     )
-    def fetch_rss_feed(self, feed_config: Dict[str, str]) -> List[Dict[str, Any]]:
+    def fetch_rss_feed(self, feed_config: dict[str, str]) -> list[dict[str, Any]]:
         """Fetch articles from an RSS feed with retry logic."""
         try:
             logger.info(f"Fetching RSS feed: {feed_config['name']}")
@@ -85,7 +84,7 @@ class DataIngestor:
                     articles.append(article_data)
                 except Exception as e:
                     logger.error(
-                        f"Error processing entry from {feed_config['name']}: {str(e)}"
+                        f"Error processing entry from {feed_config['name']}: {e!s}"
                     )
                     self.stats["errors"] += 1
                     continue
@@ -95,7 +94,7 @@ class DataIngestor:
             )
             return articles
         except Exception as e:
-            logger.error(f"Error fetching RSS feed {feed_config['name']}: {str(e)}")
+            logger.error(f"Error fetching RSS feed {feed_config['name']}: {e!s}")
             self.stats["errors"] += 1
             raise
 
@@ -122,7 +121,7 @@ class DataIngestor:
         else:
             return datetime.utcnow()
 
-    def save_articles(self, articles: List[Dict[str, Any]]) -> List[int]:
+    def save_articles(self, articles: list[dict[str, Any]]) -> list[int]:
         """Save articles to db, avoid duplicates, and return new article IDs."""
         saved_count = 0
         new_article_ids = []
@@ -145,7 +144,7 @@ class DataIngestor:
                 saved_count += 1
             except Exception as e:
                 logger.error(
-                    f"Error preparing article {article_data.get('article_url', 'unknown')} for saving: {str(e)}"
+                    f"Error preparing article {article_data.get('article_url', 'unknown')} for saving: {e!s}"
                 )
                 self.stats["errors"] += 1
 
@@ -161,7 +160,7 @@ class DataIngestor:
             logger.info(f"Saved {saved_count} new articles to database.")
         except Exception as e:
             self.session.rollback()
-            logger.error(f"Error committing new articles to database: {str(e)}")
+            logger.error(f"Error committing new articles to database: {e!s}")
             self.stats["errors"] += len(articles_to_add)
             return []
 
@@ -204,7 +203,7 @@ def collect_and_send_batch(self):
 
         if total_new_article_ids:
             logger.info(f"Total new articles to process: {len(total_new_article_ids)}")
-            send_batch_processing_tasks(total_new_article_ids)
+            send_batch_processing_task(total_new_article_ids)
         else:
             logger.info("No new articles found in this cycle.")
 
@@ -222,35 +221,24 @@ def collect_and_send_batch(self):
         }
 
 
-def send_batch_processing_tasks(article_ids: List[int]):
-    """Send batch processing tasks for a specific list of article IDs."""
+def send_batch_processing_task(article_ids: list[int]):
+    """Sends a single, large batch processing task for a list of article IDs."""
     if not article_ids:
         logger.info("No new article IDs to send for processing.")
         return
 
     try:
-        batch_size = 20
-        batches_sent = 0
-        for i in range(0, len(article_ids), batch_size):
-            batch_ids = article_ids[i:i + batch_size]
-            try:
-                celery_app.send_task(
-                    "services.sentiment_processor.app.worker.process_sentiment_batch",
-                    args=[batch_ids],
-                    queue="sentiment_batch_queue",
-                )
-                batches_sent += 1
-                logger.info(
-                    f"Sent batch task for {len(batch_ids)} articles: {batch_ids}"
-                )
-            except Exception as e:
-                logger.error(f"Error sending batch task for articles {batch_ids}: {e}")
-
+        logger.info(f"Sending a single batch task for {len(article_ids)} articles.")
+        celery_app.send_task(
+            "services.sentiment_processor.app.worker.process_sentiment_batch",
+            args=[article_ids],  # Send the entire list as one argument
+            queue="sentiment_batch_queue",
+        )
         logger.info(
-            f"Successfully sent {batches_sent} batch tasks for {len(article_ids)} articles"
+            f"Successfully sent a single batch task for {len(article_ids)} articles."
         )
     except Exception as e:
-        logger.error(f"Error in send_batch_processing_tasks: {e}")
+        logger.error(f"Error sending the batch processing task for articles {article_ids}: {e}")
 
 
 if __name__ == "__main__":

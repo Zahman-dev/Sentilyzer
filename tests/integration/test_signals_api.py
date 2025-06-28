@@ -10,11 +10,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+)
 
-from services.common.app.db.base import ApiKey, Base, User
+from services.common.app.db.base import Base
+from services.common.app.db.models import ApiKey, User
 from services.common.app.db.session import get_db
-from services.signals_api.app.main import create_app
+from services.signals_api.app.main import app
 from tests.integration.db_utils import (
     TestingSessionLocal,
     engine,
@@ -22,7 +25,7 @@ from tests.integration.db_utils import (
 )
 
 # --- App Setup ---
-app = create_app()
+# app = create_app()
 app.dependency_overrides[get_db] = override_get_db
 
 

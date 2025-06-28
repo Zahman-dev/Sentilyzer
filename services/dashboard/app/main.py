@@ -88,11 +88,11 @@ def get_database_stats() -> dict:
         latest_date = latest_article.published_at if latest_article else None
 
         # Ensure latest_date is timezone-aware
-        if latest_date and latest_date.tzinfo is None:
-            latest_date = latest_date.replace(tzinfo=timezone.utc)
+        if latest_date is not None:
+            if latest_date.tzinfo is None:
+                latest_date = latest_date.replace(tzinfo=timezone.utc)
 
-        # Add debug logging for database datetime
-        if latest_date:
+            # Add debug logging for database datetime
             logger.info(
                 f"Database latest_date: {latest_date} (type: {type(latest_date)}, tzinfo: {latest_date.tzinfo})"
             )

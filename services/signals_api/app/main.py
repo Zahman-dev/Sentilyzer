@@ -14,7 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from sqlalchemy import and_, desc, func
+from sqlalchemy import and_, desc, func, text
 from sqlalchemy.orm import Session
 
 from services.common.app.db.models import ApiKey, RawArticle, SentimentScore, User
@@ -96,7 +96,8 @@ async def get_current_user(
         # Query for the API key
         api_key_record = (
             db.query(ApiKey)
-            .filter(and_(ApiKey.key_hash == key_hash, ApiKey.is_active))
+            .filter(ApiKey.key_hash == key_hash)
+            .filter(ApiKey.is_active.is_(True))
             .first()
         )
 
@@ -105,15 +106,19 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="Invalid or expired API key")
 
         # Check if API key has an expiration date and if it's expired
-        current_time = datetime.now(timezone.utc)
-        if api_key_record.expires_at and api_key_record.expires_at <= current_time:
+        expiration_check = and_(
+            api_key_record.expires_at.isnot(None),
+            api_key_record.expires_at <= text("NOW()")
+        )
+        if db.query(expiration_check).scalar():
             logger.warning(f"Expired API key used for user: {api_key_record.user_id}")
             raise HTTPException(status_code=401, detail="API key has expired")
 
         # Get associated user
         user = (
             db.query(User)
-            .filter(and_(User.id == api_key_record.user_id, User.is_active))
+            .filter(User.id == api_key_record.user_id)
+            .filter(User.is_active.is_(True))
             .first()
         )
 

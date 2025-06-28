@@ -46,4 +46,10 @@ FROM builder as application
 
 WORKDIR /app
 
-CMD ["celery", "-A", "services.sentiment_processor.app.worker.celery_app", "worker", "--loglevel=info"] 
+# Copy and set up the entrypoint script
+COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]
+
+# The command to run the Celery worker, passed to the entrypoint
+CMD ["celery", "-A", "services.sentiment_processor.app.worker.celery_app", "worker", "--loglevel=info"]

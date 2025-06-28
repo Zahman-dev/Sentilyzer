@@ -4,13 +4,15 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from services.common.app.db.base import Base
+
 # Load environment variables
 load_dotenv()
 
 # Database configuration
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://user:password@postgres:5432/sentilizer_db",
+    "postgresql://sentilyzer_user:sentilyzer_password@localhost:5432/sentilyzer_db",
 )
 
 # Create engine
@@ -27,9 +29,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_db():
-    """
-    Dependency function for FastAPI to get database session.
-    """
+    """Dependency function for FastAPI to get a database session."""
     db = SessionLocal()
     try:
         yield db
@@ -39,22 +39,22 @@ def get_db():
 
 def create_db_session():
     """
-    Create a database session for use outside of FastAPI context.
+    Create a database session for use outside of the FastAPI context.
+
     Remember to close the session after use.
     """
     return SessionLocal()
 
 
 def get_db_engine():
-    """
-    Get the database engine for direct access.
-    """
+    """Get the database engine for direct access."""
     return engine
 
 
 def create_session():
     """
     Create a database session for scripts and utilities.
-    Alias for create_db_session for consistency with generate_api_key.py
+
+    Alias for create_db_session for consistency with generate_api_key.py.
     """
     return SessionLocal()

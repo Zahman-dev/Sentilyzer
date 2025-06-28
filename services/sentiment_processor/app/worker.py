@@ -1,19 +1,14 @@
 import os
 import sys
 import time
-from datetime import datetime, timezone
-from typing import List, Optional, Tuple
 
 # Redis and Celery imports
 from celery import Celery, Task
 from celery.signals import worker_ready
-from celery.utils.log import get_task_logger
 from sqlalchemy import and_
-from sqlalchemy.orm import Session
-from tenacity import retry, stop_after_attempt, wait_exponential
 
-# Add common to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../common"))
+# Add project root to path for imports for consistency
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
 from services.common.app.db.models import RawArticle, SentimentScore
 from services.common.app.db.session import create_db_session
@@ -50,8 +45,8 @@ except ImportError as e:
 
 
 class FinBERTBatchAnalyzer:
-    """
-    Production-ready FinBERT sentiment analyzer optimized for batch processing.
+    """Production-ready FinBERT sentiment analyzer optimized for batch processing.
+
     Model is loaded once and kept in memory for efficient batch processing.
     """
 
@@ -70,9 +65,7 @@ class FinBERTBatchAnalyzer:
         self._load_model()
 
     def _load_model(self):
-        """
-        Load FinBERT model and tokenizer. Called once at startup.
-        """
+        """Load FinBERT model and tokenizer. Called once at startup."""
         if not MODEL_AVAILABLE:
             logger.warning(
                 "ML dependencies not available. Using fallback sentiment analysis."
@@ -105,15 +98,13 @@ class FinBERTBatchAnalyzer:
             logger.info(f"FinBERT model loaded successfully in {load_time:.2f} seconds")
 
         except Exception as e:
-            logger.error(f"Failed to load FinBERT model: {str(e)}")
+            logger.error(f"Failed to load FinBERT model: {e!s}")
             logger.warning("Falling back to keyword-based sentiment analysis")
             self.model = None
             self.tokenizer = None
 
-    def _predict_single(self, text: str) -> Tuple[float, str]:
-        """
-        Single text prediction using FinBERT.
-        """
+    def _predict_single(self, text: str) -> tuple[float, str]:
+        """Single text prediction using FinBERT."""
         if not self.model or not self.tokenizer:
             return self._fallback_sentiment(text)
 
@@ -131,11 +122,11 @@ class FinBERTBatchAnalyzer:
             # Predict
             with torch.no_grad():
                 outputs = self.model(**inputs)
-                predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
-                confidence, predicted = torch.max(predictions, 1)
+                logits = outputs.logits
+                confidence, predicted = torch.max(logits, 1)
 
                 confidence_score = confidence.item()
-                predicted_label = self.label_map[predicted.item()]
+                predicted_label = self.label_map[int(predicted.item())]
 
                 # Convert to sentiment score (-1 to 1 range)
                 if predicted_label == "positive":
@@ -148,13 +139,11 @@ class FinBERTBatchAnalyzer:
                 return sentiment_score, predicted_label
 
         except Exception as e:
-            logger.error(f"Error in FinBERT prediction: {str(e)}")
+            logger.error(f"Error in FinBERT prediction: {e!s}")
             return self._fallback_sentiment(text)
 
-    def predict_batch(self, texts: List[str]) -> List[Tuple[float, str]]:
-        """
-        Batch prediction for maximum throughput efficiency.
-        """
+    def predict_batch(self, texts: list[str]) -> list[tuple[float, str]]:
+        """Batch prediction for maximum throughput efficiency."""
         if not self.model or not self.tokenizer:
             return [self._fallback_sentiment(text) for text in texts]
 
@@ -175,13 +164,11 @@ class FinBERTBatchAnalyzer:
             return results
 
         except Exception as e:
-            logger.error(f"Error in batch prediction: {str(e)}")
+            logger.error(f"Error in batch prediction: {e!s}")
             return [self._fallback_sentiment(text) for text in texts]
 
-    def _process_chunk(self, texts: List[str]) -> List[Tuple[float, str]]:
-        """
-        Process a chunk of texts through the model.
-        """
+    def _process_chunk(self, texts: list[str]) -> list[tuple[float, str]]:
+        """Process a chunk of texts through the model."""
         if not self.model or not self.tokenizer:
             return [self._fallback_sentiment(text) for text in texts]
 
@@ -198,13 +185,13 @@ class FinBERTBatchAnalyzer:
         # Predict batch
         with torch.no_grad():
             outputs = self.model(**inputs)
-            predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            confidences, predicted_labels = torch.max(predictions, 1)
+            logits = outputs.logits
+            confidences, predicted_labels = torch.max(logits, 1)
 
             results = []
-            for conf, pred in zip(confidences, predicted_labels):
+            for conf, pred in zip(confidences, predicted_labels, strict=False):
                 confidence_score = conf.item()
-                predicted_label = self.label_map[pred.item()]
+                predicted_label = self.label_map[int(pred.item())]
 
                 # Convert to sentiment score
                 if predicted_label == "positive":
@@ -218,10 +205,8 @@ class FinBERTBatchAnalyzer:
 
             return results
 
-    def _fallback_sentiment(self, text: str) -> Tuple[float, str]:
-        """
-        Fallback keyword-based sentiment analysis when FinBERT is not available.
-        """
+    def _fallback_sentiment(self, text: str) -> tuple[float, str]:
+        """Fallback keyword-based sentiment analysis when FinBERT is not available."""
         positive_keywords = [
             "growth",
             "profit",
@@ -279,8 +264,8 @@ class FinBERTBatchAnalyzer:
 
 @worker_ready.connect
 def worker_ready_handler(sender, **kwargs):
-    """
-    Initialize the sentiment analyzer when worker starts.
+    """Initialize the sentiment analyzer when worker starts.
+
     This ensures the model is loaded once and kept in memory.
     """
     global sentiment_analyzer
@@ -289,20 +274,20 @@ def worker_ready_handler(sender, **kwargs):
     logger.info("Worker ready and sentiment analyzer initialized.")
 
 
-@celery_app.task(bind=True, max_retries=0, name="app.worker.process_sentiment_batch")
-def process_sentiment_batch(self, article_ids: List[int]):
-    """
-    Main batch processing task for sentiment analysis.
-
-    This task follows the PLAN.md specifications:
-    1. Receives a list of article_ids from Redis queue
-    2. Fetches all articles in a single database query
-    3. Processes them in batch through FinBERT
-    4. Saves results in bulk to sentiment_scores table
-    5. Implements robust error handling with poison pill prevention
+@celery_app.task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3},
+    retry_backoff=True,
+    retry_jitter=True,
+    name="services.sentiment_processor.app.worker.process_sentiment_batch",
+)
+def process_sentiment_batch(self: Task, article_ids: list[int]):
+    """Celery task to process a batch of articles for sentiment analysis.
 
     Args:
-        article_ids: List of article IDs to process
+        self (Task): The Celery Task instance.
+        article_ids (list[int]): A list of article IDs to process.
     """
     global sentiment_analyzer
 
@@ -324,8 +309,8 @@ def process_sentiment_batch(self, article_ids: List[int]):
                 .filter(
                     and_(
                         RawArticle.id.in_(article_ids),
-                        RawArticle.is_processed == False,
-                        RawArticle.has_error == False,
+                        RawArticle.is_processed.is_(False),
+                        RawArticle.has_error.is_(False),
                     )
                 )
                 .all()
@@ -411,7 +396,7 @@ def process_sentiment_batch(self, article_ids: List[int]):
 
     except Exception as e:
         # Robust error handling - Poison Pill Prevention
-        logger.error(f"Error processing batch {article_ids}: {str(e)}", exc_info=True)
+        logger.error(f"Error processing batch {article_ids}: {e!s}", exc_info=True)
 
         try:
             # Mark all articles in this batch as having errors
@@ -433,7 +418,7 @@ def process_sentiment_batch(self, article_ids: List[int]):
 
         except Exception as db_error:
             logger.error(
-                f"Failed to update error status for articles {article_ids}: {str(db_error)}"
+                f"Failed to update error status for articles {article_ids}: {db_error!s}"
             )
 
         # Don't raise the exception - this prevents the task from being retried

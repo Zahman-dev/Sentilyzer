@@ -1,32 +1,31 @@
-import hashlib
-import logging
 import os
 import sys
-from datetime import datetime
-from typing import Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Security
+# Add project root to path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+
+import hashlib
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, APIKeyHeader
-from sqlalchemy import and_, desc
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
 from services.common.app.db.models import ApiKey, RawArticle, SentimentScore, User
 from services.common.app.db.session import get_db
 from services.common.app.logging_config import configure_logging, get_logger
 from services.common.app.schemas.sentiment import (
-    ErrorResponse,
     HealthResponse,
     SentimentData,
     SignalsRequest,
     SignalsResponse,
-    SentimentAnalysisRequest,
-    SentimentAnalysisResponse,
 )
 
-# Configure logging
-configure_logging(service_name="signals_api")
-logger = get_logger("signals_api")
+# Configure logging for the service
+configure_logging("signals_api")
+logger = get_logger(__name__)
 
 # Security
 security = HTTPBearer()
@@ -34,6 +33,10 @@ security = HTTPBearer()
 # Create FastAPI app
 app = FastAPI(
     title="Sentilyzer Signals API",
+    description="Financial sentiment analysis and signals API",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # Add CORS middleware
@@ -45,143 +48,148 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Default values for function arguments
-DEFAULT_LIMIT = 100
-DEFAULT_SKIP = 0
+# Authentication
+credentials_exception = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Invalid or expired API key",
+    headers={"WWW-Authenticate": "Bearer"},
+)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Security(security),
+    token: HTTPAuthorizationCredentials = Security(security),
     db: Session = Depends(get_db),
 ) -> User:
-    """
-    Authenticate user based on API key.
-    """
+    """Authenticate user based on API key."""
     try:
         # Extract API key from Bearer token
-        api_key = credentials.credentials
+        api_key = token.credentials
 
-        # Hash the provided API key
+        # Hash the provided key to find it in the database
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
 
         # Query for the API key
         api_key_record = (
             db.query(ApiKey)
-            .filter(and_(ApiKey.key_hash == key_hash, ApiKey.is_active == True))
+            .filter(and_(ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True)))
             .first()
         )
 
         if not api_key_record:
-            logger.warning(f"Invalid API key attempt: {key_hash[:8]}...")
+            logger.warning(f"Invalid API key used: {api_key[:8]}...")
             raise HTTPException(status_code=401, detail="Invalid or expired API key")
 
-        # Check if API key has expired
+        # Check if API key has an expiration date and if it's expired
         if api_key_record.expires_at and api_key_record.expires_at < datetime.utcnow():
-            logger.warning(f"Expired API key used: {key_hash[:8]}...")
+            logger.warning(f"Expired API key used for user: {api_key_record.user_id}")
             raise HTTPException(status_code=401, detail="API key has expired")
 
         # Get associated user
         user = (
             db.query(User)
-            .filter(and_(User.id == api_key_record.user_id, User.is_active == True))
+            .filter(and_(User.id == api_key_record.user_id, User.is_active.is_(True)))
             .first()
         )
 
         if not user:
             logger.warning(
-                f"Inactive user attempted access: user_id={api_key_record.user_id}"
+                f"API key {api_key_record.id} belongs to a disabled user: {api_key_record.user_id}"
             )
             raise HTTPException(status_code=401, detail="User account is inactive")
 
         logger.info(f"Authenticated user: {user.email}")
         return user
 
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        raise e  # Re-raise HTTPException to maintain status code and detail
     except Exception as e:
-        logger.error(f"Authentication error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Authentication service error")
+        logger.error(f"Authentication error: {e!s}")
+        raise HTTPException(
+            status_code=500, detail="Authentication service error"
+        ) from e
 
 
-@app.get(
-    "/health",
-    response_model=HealthResponse,
-    tags=["Health"],
-    summary="Perform a Health Check",
-    description="Returns a health check response to confirm the API is running.",
-)
-def health_check():
-    """Performs a health check."""
-    return HealthResponse(status="ok")
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Health check endpoint - No authentication required."""
+    return HealthResponse(status="ok", timestamp=datetime.utcnow(), version="1.0.0")
 
 
-@app.get("/signals")
-def get_signals(
-    skip: int = DEFAULT_SKIP,
-    limit: int = DEFAULT_LIMIT,
+@app.post("/v1/signals", response_model=SignalsResponse)
+async def get_sentiment_signals(
+    request: SignalsRequest,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    credentials: HTTPAuthorizationCredentials = Security(security),
-) -> Dict:
-    """Get signals endpoint."""
-    # Verify API key
-    api_key = db.query(ApiKey).filter(ApiKey.key == credentials.credentials).first()
-    if not api_key:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+):
+    """Get sentiment analysis signals for a given time period.
 
-    # Check if API key is active
-    if not api_key.is_active:
-        raise HTTPException(status_code=401, detail="API key is not active")
+    This endpoint returns sentiment data (not investment advice) for articles
+    published within the specified date range. The data includes sentiment scores
+    and labels generated by our analysis models.
 
-    # Get user associated with API key
-    current_user = db.query(User).filter(User.id == api_key.user_id).first()
-
+    **Important Disclaimer**: This is analytical data only, not investment advice.
+    **Authentication**: Requires valid API key in Authorization header.
+    """
     try:
         logger.info(
-            "Processing signals request for user: {}, skip: {}, limit: {}".format(
-                current_user.email, skip, limit
-            )
+            f"Processing signals request for user: {current_user.email}, ticker: {request.ticker}, dates: {request.start_date} to {request.end_date}"
         )
 
-        # Get sentiment scores
-        sentiment_scores = (
-            db.query(SentimentScore)
-            .join(RawArticle)
-            .filter(RawArticle.user_id == current_user.id)
-            .order_by(desc(RawArticle.created_at))
-            .offset(skip)
-            .limit(limit)
-            .all()
+        # Query for articles with sentiment scores in the date range
+        query = (
+            db.query(
+                RawArticle.article_url,
+                RawArticle.headline,
+                RawArticle.published_at,
+                SentimentScore.sentiment_score,
+                SentimentScore.sentiment_label,
+            )
+            .join(SentimentScore, RawArticle.id == SentimentScore.article_id)
+            .filter(
+                and_(
+                    RawArticle.published_at >= request.start_date,
+                    RawArticle.published_at <= request.end_date,
+                    RawArticle.has_error.is_(False),
+                )
+            )
+            .order_by(desc(RawArticle.published_at))
         )
+
+        # Execute query
+        results = query.all()
 
         # Convert to response format
-        signals = []
-        for score in sentiment_scores:
-            article = score.article
-            signals.append(
+        sentiment_data = []
+        for result in results:
+            sentiment_data.append(
                 SentimentData(
-                    id=score.id,
-                    article_id=article.id,
-                    sentiment_score=score.sentiment_score,
-                    sentiment_label=score.sentiment_label,
-                    source=article.source,
-                    content=article.content,
-                    created_at=article.created_at,
+                    article_url=result.article_url,
+                    headline=result.headline,
+                    published_at=result.published_at,
+                    sentiment_score=result.sentiment_score,
+                    sentiment_label=result.sentiment_label,
                 )
             )
 
-        return {"signals": signals}
+        logger.info(
+            f"Returning {len(sentiment_data)} sentiment records for user: {current_user.email}"
+        )
 
+        return SignalsResponse(data=sentiment_data, total_count=len(sentiment_data))
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Error processing signals request: {}".format(str(e)))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Error processing signals request: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e!s}") from e
 
 
 @app.get("/v1/stats")
 async def get_stats(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    """
-    Get basic statistics about the data in the system.
+    """Get basic statistics about the data in the system.
+
     **Authentication**: Requires valid API key.
     """
     try:
@@ -192,16 +200,13 @@ async def get_stats(
 
         # Count processed articles
         processed_articles = (
-            db.query(RawArticle).filter(RawArticle.is_processed == True).count()
+            db.query(RawArticle).filter(RawArticle.is_processed.is_(True)).count()
         )
 
         # Count articles with errors
         error_articles = (
-            db.query(RawArticle).filter(RawArticle.has_error == True).count()
+            db.query(RawArticle).filter(RawArticle.has_error.is_(True)).count()
         )
-
-        # Count sentiment scores
-        total_sentiment_scores = db.query(SentimentScore).count()
 
         # Get latest article date
         latest_article = (
@@ -214,7 +219,6 @@ async def get_stats(
             "total_articles": total_articles,
             "processed_articles": processed_articles,
             "error_articles": error_articles,
-            "total_sentiment_scores": total_sentiment_scores,
             "latest_article_date": latest_article_date,
             "processing_rate": (
                 f"{processed_articles}/{total_articles}"
@@ -224,16 +228,16 @@ async def get_stats(
         }
 
     except Exception as e:
-        logger.error(f"Error getting stats: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(f"Error getting stats: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e!s}") from e
 
 
 @app.get("/v1/sources")
 async def get_sources(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    """
-    Get available data sources and their article counts.
+    """Get available data sources and their article counts.
+
     **Authentication**: Requires valid API key.
     """
     try:
@@ -243,8 +247,8 @@ async def get_sources(
         sources_query = (
             db.query(
                 RawArticle.source,
-                db.func.count(RawArticle.id).label("article_count"),
-                db.func.max(RawArticle.published_at).label("latest_article"),
+                func.count(RawArticle.id).label("article_count"),
+                func.max(RawArticle.published_at).label("latest_article"),
             )
             .group_by(RawArticle.source)
             .all()
@@ -263,8 +267,8 @@ async def get_sources(
         return {"sources": sources, "total_sources": len(sources)}
 
     except Exception as e:
-        logger.error(f"Error getting sources: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(f"Error getting sources: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e!s}") from e
 
 
 if __name__ == "__main__":

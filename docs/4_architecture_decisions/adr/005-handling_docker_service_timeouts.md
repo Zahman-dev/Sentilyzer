@@ -203,4 +203,4 @@ Timeout sorunları devam ederse:
 1. Bu dokümandaki troubleshooting adımlarını takip edin
 2. Build script'i `-o` flag ile çalıştırın
 3. Docker environment'ı temizleyip tekrar deneyin
-4. Network bağlantınızı kontrol edin 
+4. Network bağlantınızı kontrol edin

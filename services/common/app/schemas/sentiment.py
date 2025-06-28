@@ -66,6 +66,7 @@ class ErrorResponse(BaseModel):
 # Database model schemas (for internal use)
 class RawArticleBase(BaseModel):
     source: str
+    ticker: Optional[str] = None
     article_url: str
     headline: str
     article_text: str
@@ -153,25 +154,6 @@ class NewApiKeyResponse(BaseModel):
     api_key_details: ApiKey
 
 
-class Signal(BaseModel):
-    article_id: int = Field(..., description="The unique identifier for the article.")
-    sentiment_score: float = Field(
-        ..., description="The calculated sentiment score for the article."
-    )
-
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True
-
-
-class SignalResponse(BaseModel):
-    # ... existing code ...
-    total_sentiments: int = Field(
-        ..., description="The total number of sentiment scores calculated."
-    )
-
-
 class SourceDetail(BaseModel):
     source_name: str = Field(..., description="The name of the data source.")
     article_count: int = Field(..., description="The number of articles from this source.")
@@ -192,35 +174,3 @@ class SourcesResponse(BaseModel):
     sources: List[SourceDetail] = Field(
         ..., description="A list of available data sources and their details."
     )
-
-
-class APIKey(BaseModel):
-    """Schema for returning a newly created API key (the key itself is only shown once)."""
-
-    key: str = Field(..., description="The API key. This is only returned on creation.")
-    user_id: int = Field(..., description="The ID of the user this key belongs to.")
-    expires_at: Optional[datetime] = Field(
-        default=None, description="The key's expiration date."
-    )
-
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True
-
-
-class APIKeyInfo(BaseModel):
-    """Schema for listing API keys, excluding the key itself."""
-
-    id: int = Field(..., description="The unique identifier for the API key.")
-    user_id: int = Field(..., description="The ID of the user this key belongs to.")
-    is_active: bool = Field(..., description="Whether the API key is currently active.")
-    expires_at: Optional[datetime] = Field(
-        default=None, description="The key's expiration date."
-    )
-    created_at: datetime
-
-    class Config:
-        """Pydantic model configuration."""
-
-        from_attributes = True

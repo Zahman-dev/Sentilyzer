@@ -21,10 +21,12 @@ def main():
         # This is a placeholder for the Twitter integration logic.
         logger.info("Fetching tweets (placeholder)...")
         dummy_article = RawArticle(
-            user_id=1,  # Assuming a default user with ID 1 exists for placeholder
             source="twitter_placeholder",
-            content="This is the content of a placeholder tweet.",
-            processed=False,
+            headline="Placeholder Tweet",
+            article_text="This is the content of a placeholder tweet.",
+            article_url=f"https://twitter.com/placeholder/{datetime.utcnow().timestamp()}",
+            published_at=datetime.utcnow(),
+            is_processed=False,
             has_error=False,
         )
         db_session.add(dummy_article)

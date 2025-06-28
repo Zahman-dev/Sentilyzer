@@ -24,11 +24,12 @@ st.set_page_config(
     page_title="Sentilyzer Dashboard",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 # Custom CSS for better styling
-st.markdown("""
+st.markdown(
+    """
 <style>
 .metric-container {
     background-color: #f0f2f6;
@@ -65,7 +66,9 @@ st.markdown("""
     color: white;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
@@ -79,7 +82,9 @@ def get_database_stats() -> dict:
         error_articles = db.query(RawArticle).filter(RawArticle.has_error).count()
 
         # Get latest article
-        latest_article = db.query(RawArticle).order_by(desc(RawArticle.published_at)).first()
+        latest_article = (
+            db.query(RawArticle).order_by(desc(RawArticle.published_at)).first()
+        )
         latest_date = latest_article.published_at if latest_article else None
 
         # Ensure latest_date is timezone-aware
@@ -88,13 +93,15 @@ def get_database_stats() -> dict:
 
         # Add debug logging for database datetime
         if latest_date:
-            logger.info(f"Database latest_date: {latest_date} (type: {type(latest_date)}, tzinfo: {latest_date.tzinfo})")
+            logger.info(
+                f"Database latest_date: {latest_date} (type: {type(latest_date)}, tzinfo: {latest_date.tzinfo})"
+            )
 
         # Get sentiment distribution
         sentiment_dist = (
             db.query(
                 SentimentScore.sentiment_label,
-                func.count(SentimentScore.id).label('count')
+                func.count(SentimentScore.id).label("count"),
             )
             .group_by(SentimentScore.sentiment_label)
             .all()
@@ -102,23 +109,17 @@ def get_database_stats() -> dict:
 
         # Get articles by source
         source_dist = (
-            db.query(
-                RawArticle.source,
-                func.count(RawArticle.id).label('count')
-            )
+            db.query(RawArticle.source, func.count(RawArticle.id).label("count"))
             .group_by(RawArticle.source)
             .all()
         )
 
         # Get tickers with most articles
         ticker_dist = (
-            db.query(
-                RawArticle.ticker,
-                func.count(RawArticle.id).label('count')
-            )
+            db.query(RawArticle.ticker, func.count(RawArticle.id).label("count"))
             .filter(RawArticle.ticker.isnot(None))
             .group_by(RawArticle.ticker)
-            .order_by(desc('count'))
+            .order_by(desc("count"))
             .limit(10)
             .all()
         )
@@ -126,14 +127,14 @@ def get_database_stats() -> dict:
         db.close()
 
         return {
-            'total_articles': total_articles,
-            'processed_articles': processed_articles,
-            'error_articles': error_articles,
-            'processing_rate': processed_articles / max(total_articles, 1),
-            'latest_date': latest_date,
-            'sentiment_distribution': {label: count for label, count in sentiment_dist},  # noqa: C416
-            'source_distribution': {source: count for source, count in source_dist},  # noqa: C416
-            'ticker_distribution': {ticker: count for ticker, count in ticker_dist}  # noqa: C416
+            "total_articles": total_articles,
+            "processed_articles": processed_articles,
+            "error_articles": error_articles,
+            "processing_rate": processed_articles / max(total_articles, 1),
+            "latest_date": latest_date,
+            "sentiment_distribution": {label: count for label, count in sentiment_dist},  # noqa: C416
+            "source_distribution": {source: count for source, count in source_dist},  # noqa: C416
+            "ticker_distribution": {ticker: count for ticker, count in ticker_dist},  # noqa: C416
         }
 
     except Exception as e:
@@ -153,35 +154,37 @@ def get_sentiment_trend_data(hours: int = 24) -> pd.DataFrame:
         # Query sentiment scores grouped by hour
         sentiment_data = (
             db.query(
-                func.date_trunc('hour', RawArticle.published_at).label('hour'),
-                func.avg(SentimentScore.sentiment_score).label('avg_sentiment'),
-                func.count(SentimentScore.id).label('article_count'),
-                SentimentScore.sentiment_label
+                func.date_trunc("hour", RawArticle.published_at).label("hour"),
+                func.avg(SentimentScore.sentiment_score).label("avg_sentiment"),
+                func.count(SentimentScore.id).label("article_count"),
+                SentimentScore.sentiment_label,
             )
             .join(SentimentScore, RawArticle.id == SentimentScore.article_id)
             .filter(
                 and_(
                     RawArticle.published_at >= start_time,
-                    RawArticle.published_at <= end_time
+                    RawArticle.published_at <= end_time,
                 )
             )
-            .group_by('hour', SentimentScore.sentiment_label)
-            .order_by('hour')
+            .group_by("hour", SentimentScore.sentiment_label)
+            .order_by("hour")
             .all()
         )
 
         db.close()
 
         # Convert to DataFrame
-        df = pd.DataFrame([
-            {
-                'hour': item.hour,
-                'avg_sentiment': float(item.avg_sentiment),
-                'article_count': item.article_count,
-                'sentiment_label': item.sentiment_label
-            }
-            for item in sentiment_data
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "hour": item.hour,
+                    "avg_sentiment": float(item.avg_sentiment),
+                    "article_count": item.article_count,
+                    "sentiment_label": item.sentiment_label,
+                }
+                for item in sentiment_data
+            ]
+        )
 
         return df
 
@@ -208,15 +211,17 @@ def get_recent_articles(limit: int = 20) -> list[dict]:
 
         result = []
         for article, sentiment in articles:
-            result.append({
-                'headline': article.headline,
-                'source': article.source,
-                'ticker': article.ticker,
-                'published_at': article.published_at,
-                'sentiment_score': sentiment.sentiment_score,
-                'sentiment_label': sentiment.sentiment_label,
-                'article_url': article.article_url
-            })
+            result.append(
+                {
+                    "headline": article.headline,
+                    "source": article.source,
+                    "ticker": article.ticker,
+                    "published_at": article.published_at,
+                    "sentiment_score": sentiment.sentiment_score,
+                    "sentiment_label": sentiment.sentiment_label,
+                    "article_url": article.article_url,
+                }
+            )
 
         return result
 
@@ -227,7 +232,7 @@ def get_recent_articles(limit: int = 20) -> list[dict]:
 
 def render_overview_metrics(stats: dict):
     """Render overview metrics."""
-    latest_date = stats.get('latest_date')
+    latest_date = stats.get("latest_date")
 
     # Calculate time since last article
     last_article_time_str = "N/A"
@@ -256,7 +261,7 @@ def render_overview_metrics(stats: dict):
         st.metric(
             "Total Articles",
             f"{stats.get('total_articles', 0):,}",
-            help="Total number of articles in the database."
+            help="Total number of articles in the database.",
         )
 
     with col2:
@@ -264,7 +269,7 @@ def render_overview_metrics(stats: dict):
             "Processed Articles",
             f"{stats.get('processed_articles', 0):,}",
             delta=f"{stats.get('processing_rate', 0):.1%}",
-            help="Percentage of articles processed for sentiment."
+            help="Percentage of articles processed for sentiment.",
         )
 
     with col3:
@@ -272,7 +277,7 @@ def render_overview_metrics(stats: dict):
             "Articles with Errors",
             f"{stats.get('error_articles', 0):,}",
             delta=None,
-            help="Articles that failed during processing."
+            help="Articles that failed during processing.",
         )
 
     with col4:
@@ -280,7 +285,7 @@ def render_overview_metrics(stats: dict):
             "Latest Article",
             last_article_time_str,
             delta=None,
-            help="Time since the last article was published."
+            help="Time since the last article was published.",
         )
 
 
@@ -290,19 +295,23 @@ def render_sentiment_charts(stats: dict, sentiment_df: pd.DataFrame):
 
     with col1:
         st.subheader("Sentiment Distribution")
-        sentiment_dist = stats.get('sentiment_distribution', {})
+        sentiment_dist = stats.get("sentiment_distribution", {})
         if sentiment_dist:
             labels = list(sentiment_dist.keys())
             values = list(sentiment_dist.values())
-            colors = {'positive': '#28a745', 'negative': '#dc3545', 'neutral': '#6c757d'}
+            colors = {"positive": "#28a745", "negative": "#dc3545", "neutral": "#6c757d"}
 
-            fig = go.Figure(data=[go.Pie(
-                labels=labels,
-                values=values,
-                marker_colors=[colors.get(label, '#1f77b4') for label in labels],
-                textinfo='label+percent',
-                textposition='inside'
-            )])
+            fig = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=labels,
+                        values=values,
+                        marker_colors=[colors.get(label, "#1f77b4") for label in labels],
+                        textinfo="label+percent",
+                        textposition="inside",
+                    )
+                ]
+            )
             fig.update_layout(title="Overall Sentiment Distribution", height=400)
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -313,19 +322,19 @@ def render_sentiment_charts(stats: dict, sentiment_df: pd.DataFrame):
         if not sentiment_df.empty:
             # Aggregate by hour for trend line
             hourly_avg = (
-                sentiment_df.groupby('hour')['avg_sentiment']
-                .mean()
-                .reset_index()
+                sentiment_df.groupby("hour")["avg_sentiment"].mean().reset_index()
             )
 
             fig = px.line(
                 hourly_avg,
-                x='hour',
-                y='avg_sentiment',
-                title='Average Sentiment Over Time',
-                labels={'avg_sentiment': 'Average Sentiment Score', 'hour': 'Time'}
+                x="hour",
+                y="avg_sentiment",
+                title="Average Sentiment Over Time",
+                labels={"avg_sentiment": "Average Sentiment Score", "hour": "Time"},
             )
-            fig.add_hline(y=0, line_dash="dash", line_color="gray", annotation_text="Neutral")
+            fig.add_hline(
+                y=0, line_dash="dash", line_color="gray", annotation_text="Neutral"
+            )
             fig.update_layout(height=400)
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -338,17 +347,14 @@ def render_source_analysis(stats: dict):
 
     with col1:
         st.subheader("Articles by Source")
-        source_dist = stats.get('source_distribution', {})
+        source_dist = stats.get("source_distribution", {})
         if source_dist:
             source_df = pd.DataFrame(
                 list(source_dist.items()),
-                columns=['Source', 'Articles']
+                columns=pd.Index(["Source", "Articles"], dtype="object")
             )
             fig = px.bar(
-                source_df,
-                x='Source',
-                y='Articles',
-                title='Article Count by Source'
+                source_df, x="Source", y="Articles", title="Article Count by Source"
             )
             fig.update_layout(height=400)
             st.plotly_chart(fig, use_container_width=True)
@@ -357,17 +363,17 @@ def render_source_analysis(stats: dict):
 
     with col2:
         st.subheader("Top Tickers")
-        ticker_dist = stats.get('ticker_distribution', {})
+        ticker_dist = stats.get("ticker_distribution", {})
         if ticker_dist:
             ticker_df = pd.DataFrame(
                 list(ticker_dist.items()),
-                columns=['Ticker', 'Articles']
+                columns=pd.Index(["Ticker", "Articles"], dtype="object")
             )
             fig = px.bar(
                 ticker_df,
-                x='Ticker',
-                y='Articles',
-                title='Top 10 Tickers by Article Count'
+                x="Ticker",
+                y="Articles",
+                title="Top 10 Tickers by Article Count",
             )
             fig.update_layout(height=400)
             st.plotly_chart(fig, use_container_width=True)
@@ -384,23 +390,34 @@ def render_recent_articles(articles: list[dict]):
         df = pd.DataFrame(articles)
 
         # Format the DataFrame
-        df['published_at'] = pd.to_datetime(df['published_at']).dt.strftime('%Y-%m-%d %H:%M')
-        df['sentiment_score'] = df['sentiment_score'].round(3)
+        df["published_at"] = pd.to_datetime(df["published_at"]).dt.strftime(
+            "%Y-%m-%d %H:%M"
+        )
+        df["sentiment_score"] = df["sentiment_score"].round(3)
 
         # Apply sentiment styling
         def style_sentiment(val):
             if val > 0.1:
-                return 'color: #28a745; font-weight: bold'
+                return "color: #28a745; font-weight: bold"
             elif val < -0.1:
-                return 'color: #dc3545; font-weight: bold'
+                return "color: #dc3545; font-weight: bold"
             else:
-                return 'color: #6c757d; font-weight: bold'
+                return "color: #6c757d; font-weight: bold"
 
         # Display the table
         st.dataframe(
-            df[['headline', 'source', 'ticker', 'published_at', 'sentiment_score', 'sentiment_label']],
+            df[
+                [
+                    "headline",
+                    "source",
+                    "ticker",
+                    "published_at",
+                    "sentiment_score",
+                    "sentiment_label",
+                ]
+            ],
             use_container_width=True,
-            height=400
+            height=400,
         )
     else:
         st.info("No recent articles available")
@@ -432,7 +449,7 @@ def main():
         "Time Range for Trends",
         options=[6, 12, 24, 48, 72],
         index=2,
-        format_func=lambda x: f"Last {x} hours"
+        format_func=lambda x: f"Last {x} hours",
     )
     # Ensure time_range is not None
     if time_range is None:
@@ -468,15 +485,19 @@ def main():
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            processing_rate = stats.get('processing_rate', 0) * 100
+            processing_rate = stats.get("processing_rate", 0) * 100
             st.metric("Processing Rate", f"{processing_rate:.1f}%")
 
         with col2:
-            error_rate = (stats.get('error_articles', 0) / max(stats.get('total_articles', 1), 1)) * 100
+            error_rate = (
+                stats.get("error_articles", 0) / max(stats.get("total_articles", 1), 1)
+            ) * 100
             st.metric("Error Rate", f"{error_rate:.1f}%")
 
         with col3:
-            total_sentiment_records = sum(stats.get('sentiment_distribution', {}).values())
+            total_sentiment_records = sum(
+                stats.get("sentiment_distribution", {}).values()
+            )
             st.metric("Sentiment Records", f"{total_sentiment_records:,}")
 
     with tab3:
@@ -491,7 +512,7 @@ def main():
         Last updated: {}
         </div>
         """.format(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 

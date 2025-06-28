@@ -5,10 +5,11 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -33,15 +34,17 @@ logger = get_logger(__name__)
 # Security
 security = HTTPBearer()
 
+
 # Rate limiter setup
 def get_user_id_for_rate_limit(request: Request) -> str:
     """Get user identifier for rate limiting. Prefers authenticated user ID over IP."""
     # Try to get authenticated user first
-    if hasattr(request.state, 'current_user') and request.state.current_user:
+    if hasattr(request.state, "current_user") and request.state.current_user:
         return f"user:{request.state.current_user.id}"
-    
+
     # Fall back to IP address for unauthenticated requests
     return f"ip:{get_remote_address(request)}"
+
 
 limiter = Limiter(key_func=get_user_id_for_rate_limit, default_limits=["100/minute"])
 
@@ -56,7 +59,9 @@ app = FastAPI(
 
 # Add rate limiting state and handler
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    return _rate_limit_exceeded_handler(request, exc)
 
 # Add CORS middleware
 app.add_middleware(
@@ -100,7 +105,8 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="Invalid or expired API key")
 
         # Check if API key has an expiration date and if it's expired
-        if api_key_record.expires_at is not None and api_key_record.expires_at < datetime.utcnow():
+        current_time = datetime.now(timezone.utc)
+        if api_key_record.expires_at and api_key_record.expires_at <= current_time:
             logger.warning(f"Expired API key used for user: {api_key_record.user_id}")
             raise HTTPException(status_code=401, detail="API key has expired")
 
@@ -127,9 +133,7 @@ async def get_current_user(
         raise e  # Re-raise HTTPException to maintain status code and detail
     except Exception as e:
         logger.error(f"Authentication error: {e!s}")
-        raise HTTPException(
-            status_code=500, detail="Authentication service error"
-        ) from e
+        raise HTTPException(status_code=500, detail="Authentication service error") from e
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -208,15 +212,17 @@ async def get_sentiment_signals(
         raise
     except Exception as e:
         logger.error(f"Error processing signals request: {e!s}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Internal server error: {e!s}"
+        ) from e
 
 
 @app.get("/v1/stats")
 @limiter.limit("30/minute")
 async def get_stats(
     request: Request,
-    current_user: User = Depends(get_current_user), 
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Get basic statistics about the data in the system.
 
@@ -251,23 +257,23 @@ async def get_stats(
             "error_articles": error_articles,
             "latest_article_date": latest_article_date,
             "processing_rate": (
-                f"{processed_articles}/{total_articles}"
-                if total_articles > 0
-                else "0/0"
+                f"{processed_articles}/{total_articles}" if total_articles > 0 else "0/0"
             ),
         }
 
     except Exception as e:
         logger.error(f"Error getting stats: {e!s}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Internal server error: {e!s}"
+        ) from e
 
 
 @app.get("/v1/sources")
 @limiter.limit("30/minute")
 async def get_sources(
     request: Request,
-    current_user: User = Depends(get_current_user), 
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Get available data sources and their article counts.
 
@@ -301,7 +307,9 @@ async def get_sources(
 
     except Exception as e:
         logger.error(f"Error getting sources: {e!s}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e!s}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Internal server error: {e!s}"
+        ) from e
 
 
 if __name__ == "__main__":

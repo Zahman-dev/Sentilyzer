@@ -1,9 +1,6 @@
-"""
-Sentiment Processor Service - Batch Processing Worker
-"""
+"""Sentiment Processor Service - Batch Processing Worker"""
 
 import os
-import time
 
 from services.common.app.logging_config import configure_logging, get_logger
 from services.sentiment_processor.app.worker import celery_app
@@ -14,8 +11,7 @@ logger = get_logger("sentiment_processor_main")
 
 
 def main():
-    """
-    Main function to start the Celery worker for sentiment processing.
+    """Main function to start the Celery worker for sentiment processing.
     This function is kept for legacy purposes and direct execution. The primary
     entry point for Docker is the `celery_worker` service.
     """
@@ -44,9 +40,7 @@ def main():
 
     except Exception as e:
         logger.error(f"Failed to connect to the broker at {redis_url}: {e}")
-        logger.error(
-            "Please ensure Redis is running and accessible.", exc_info=True
-        )
+        logger.error("Please ensure Redis is running and accessible.", exc_info=True)
 
 
 if __name__ == "__main__":

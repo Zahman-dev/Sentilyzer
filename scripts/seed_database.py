@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Database Seeding Script for Sentilyzer Platform
+"""Database Seeding Script for Sentilyzer Platform.
 
 This script populates the database with sample data for testing purposes.
 """
@@ -142,7 +141,7 @@ def seed_database():
         total_articles = session.query(RawArticle).count()
         total_sentiments = session.query(SentimentScore).count()
 
-        print(f"✅ Database seeding completed!")
+        print("✅ Database seeding completed!")
         print(f"   📰 Articles created: {total_articles}")
         print(f"   📊 Sentiment scores created: {total_sentiments}")
         print("")
@@ -157,7 +156,7 @@ def seed_database():
 
     except Exception as e:
         session.rollback()
-        print(f"❌ Error seeding database: {str(e)}")
+        print(f"❌ Error seeding database: {e!s}")
         raise
     finally:
         session.close()

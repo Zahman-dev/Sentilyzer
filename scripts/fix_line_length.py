@@ -3,10 +3,9 @@
 
 import os
 import sys
-from typing import List, Tuple
 
 
-def find_python_files(directory: str) -> List[str]:
+def find_python_files(directory: str) -> list[str]:
     """Find all Python files in the given directory and its subdirectories."""
     python_files = []
     for root, _, files in os.walk(directory):
@@ -16,13 +15,13 @@ def find_python_files(directory: str) -> List[str]:
     return python_files
 
 
-def fix_line_length(file_path: str, max_length: int = 90) -> Tuple[bool, List[str]]:
+def fix_line_length(file_path: str, max_length: int = 90) -> tuple[bool, list[str]]:
     """Fix lines that exceed the maximum length in a Python file.
 
     Returns:
         Tuple[bool, List[str]]: (whether file was modified, list of fixed lines)
     """
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         lines = f.readlines()
 
     modified = False

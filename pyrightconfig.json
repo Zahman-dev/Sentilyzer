@@ -7,9 +7,7 @@
     "exclude": [
         "**/__pycache__",
         "**/.pytest_cache",
-        "**/node_modules",
-        "**/.venv",
-        "**/venv"
+        "**/node_modules"
     ],
     "extraPaths": [
         "./services/common/app",
@@ -17,7 +15,8 @@
         "./services/data_ingestor/app",
         "./services/signals_api/app",
         "./services/dashboard/app",
-        "./services/twitter_ingestor/app"
+        "./services/twitter_ingestor/app",
+        "./.venv/lib/python3.10/site-packages"
     ],
     "pythonVersion": "3.10",
     "pythonPlatform": "Linux",
@@ -36,4 +35,4 @@
     "reportOptionalSubscript": "warning",
     "reportPrivateImportUsage": "none",
     "reportWildcardImportFromLibrary": "warning"
-} 
+}

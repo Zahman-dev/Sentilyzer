@@ -3,10 +3,9 @@
 
 import os
 import re
-from typing import List, Tuple
 
 
-def find_python_files(directory: str) -> List[str]:
+def find_python_files(directory: str) -> list[str]:
     """Find all Python files in the given directory and its subdirectories."""
     python_files = []
     for root, _, files in os.walk(directory):
@@ -16,13 +15,13 @@ def find_python_files(directory: str) -> List[str]:
     return python_files
 
 
-def fix_boolean_comparisons(file_path: str) -> Tuple[bool, List[str]]:
+def fix_boolean_comparisons(file_path: str) -> tuple[bool, list[str]]:
     """Fix boolean comparison issues in a Python file.
 
     Returns:
         Tuple[bool, List[str]]: (whether file was modified, list of fixed lines)
     """
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         lines = f.readlines()
 
     modified = False
@@ -92,7 +91,7 @@ def main():
             if modified:
                 print(f"Fixed boolean comparisons in {file_path}")
         except Exception as e:
-            print(f"Error processing {file_path}: {str(e)}")
+            print(f"Error processing {file_path}: {e!s}")
 
 
 if __name__ == "__main__":

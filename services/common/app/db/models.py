@@ -106,4 +106,6 @@ class ApiKey(Base):
     user = relationship("User", back_populates="api_keys")
 
     def __repr__(self):
-        return f"<ApiKey(id={self.id}, user_id={self.user_id}, is_active={self.is_active})>"
+        return (
+            f"<ApiKey(id={self.id}, user_id={self.user_id}, is_active={self.is_active})>"
+        )

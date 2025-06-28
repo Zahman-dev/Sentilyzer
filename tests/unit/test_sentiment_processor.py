@@ -59,20 +59,24 @@ def mock_finbert_model():
     mock_model.return_value = mock_model_output
 
     # Patch the AutoTokenizer and AutoModelForSequenceClassification classes
-    with patch(
-        "services.sentiment_processor.app.worker.AutoTokenizer.from_pretrained",
-        return_value=mock_tokenizer,
-    ) as mock_auto_tokenizer, patch(
-        "services.sentiment_processor.app.worker.AutoModelForSequenceClassification.from_pretrained",
-        return_value=mock_model,
-    ) as mock_auto_model, patch(
-        "services.sentiment_processor.app.worker.torch.cuda.is_available",
-        return_value=False,  # Ensure tests run on CPU mock
-    ) as mock_cuda, patch(
-        "services.sentiment_processor.app.worker.torch.no_grad",
-    ) as mock_no_grad, patch(
-        "services.sentiment_processor.app.worker.torch.device"
-    ) as mock_device:
+    with (
+        patch(
+            "services.sentiment_processor.app.worker.AutoTokenizer.from_pretrained",
+            return_value=mock_tokenizer,
+        ) as mock_auto_tokenizer,
+        patch(
+            "services.sentiment_processor.app.worker.AutoModelForSequenceClassification.from_pretrained",
+            return_value=mock_model,
+        ) as mock_auto_model,
+        patch(
+            "services.sentiment_processor.app.worker.torch.cuda.is_available",
+            return_value=False,  # Ensure tests run on CPU mock
+        ) as mock_cuda,
+        patch(
+            "services.sentiment_processor.app.worker.torch.no_grad",
+        ) as mock_no_grad,
+        patch("services.sentiment_processor.app.worker.torch.device") as mock_device,
+    ):
         yield {
             "tokenizer": mock_auto_tokenizer,
             "model": mock_auto_model,

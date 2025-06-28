@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-API Key Generation Script for Sentilyzer Platform
+"""API Key Generation Script for Sentilyzer Platform.
 
 This script generates secure API keys for users and stores them in the database.
 Phase 2 Implementation: Production-ready user and API key management.
@@ -8,28 +7,25 @@ Phase 2 Implementation: Production-ready user and API key management.
 
 import hashlib
 import os
-import secrets
-import string
 import sys
 from datetime import datetime, timedelta
-from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-# Add common module to path
-sys.path.append(os.path.join(os.path.dirname(__file__), "../common"))
+# Add project root to path for imports
+# This is necessary for the script to find the service modules
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 try:
     import bcrypt
-    from sqlalchemy.orm import Session
 
     from app.db.models import ApiKey, User
-    from app.db.session import create_session, get_db_engine
+    from app.db.session import create_session
 except ImportError as e:
     print(f"❌ Error importing required modules: {e}")
-    print("Make sure you're running this from the project root directory.")
+    print("Please ensure you have all dependencies installed. Try running:")
     sys.exit(1)
 
 
@@ -78,25 +74,22 @@ def generate_api_key(email: str) -> str:
 
 
 def hash_api_key(api_key: str) -> str:
-    """
-    Hash an API key using SHA-256 for database storage.
+    """Hash an API key using SHA-256 for database storage.
+
     We use SHA-256 for API keys as they are meant to be compared frequently.
     """
     return hashlib.sha256(api_key.encode()).hexdigest()
 
 
 def hash_password(password: str) -> str:
-    """
-    Hash a password using bcrypt for secure storage.
-    """
+    """Hash a password using bcrypt for secure storage."""
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def create_user_and_api_key(
-    email: str, password: str, expires_in_days: Optional[int] = None
+    email: str, password: str, expires_in_days: int | None = None
 ) -> tuple[User, ApiKey, str]:
-    """
-    Create a new user and associated API key in the database.
+    """Create a new user and associated API key in the database.
 
     Returns:
         tuple: (user, api_key_record, raw_api_key)
@@ -143,17 +136,23 @@ def create_user_and_api_key(
         session.close()
 
 
+def get_user_by_email(session, email: str) -> User | None:
+    return session.query(User).filter(User.email == email).first()
+
+
 def main():
-    """
-    Interactive API key generation with user creation.
-    """
+    """Interactive API key generation with user creation."""
     print("🔑 Sentilyzer API Key Generator (Phase 2)")
     print("=" * 50)
     print()
 
     try:
-        # Get user input
-        email = input("Enter user email: ").strip()
+        session = create_session()
+        if not session:
+            print("❌ Could not create a database session. Exiting.")
+            sys.exit(1)
+
+        email = input("Enter the user's email address: ").strip()
         if not email or "@" not in email:
             print("❌ Please provide a valid email address.")
             return
@@ -188,12 +187,12 @@ def main():
         print()
         print("✅ SUCCESS!")
         print("-" * 30)
-        print(f"👤 User Created:")
+        print("👤 User Created:")
         print(f"   Email: {user.email}")
         print(f"   User ID: {user.id}")
         print(f"   Created: {user.created_at}")
         print()
-        print(f"🔑 API Key Generated:")
+        print("🔑 API Key Generated:")
         print(f"   Key: {raw_api_key}")
         print(f"   Expires: {api_key_record.expires_at or 'Never'}")
         print()
@@ -201,9 +200,7 @@ def main():
         print("   - This API key will NOT be shown again")
         print("   - Store it securely (password manager recommended)")
         print("   - Use it in Authorization header: Bearer <key>")
-        print(
-            f"   - Test with: curl -H 'Authorization: Bearer {raw_api_key}' <api_url>"
-        )
+        print(f"   - Test with: curl -H 'Authorization: Bearer {raw_api_key}' <api_url>")
         print()
         print("🎯 Next Steps:")
         print("   1. Save the API key securely")

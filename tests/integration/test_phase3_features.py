@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import asyncpg
 import pytest
@@ -11,9 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 # Add common to path for testing
-sys.path.append(
-    os.path.join(os.path.dirname(__file__), "..", "..", "services", "common")
-)
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "services", "common"))
 
 from app.db.models import ApiKey, RawArticle, SentimentScore, User
 from app.db.session import get_database_session
@@ -27,22 +25,22 @@ class TestPhase3Features:
     3. PostgreSQL LISTEN/NOTIFY optimization
     """
 
-    @pytest.fixture
+    @pytest.fixture()
     def api_base_url(self):
         """Base URL for the signals API"""
         return "http://localhost:8000"
 
-    @pytest.fixture
+    @pytest.fixture()
     def dashboard_url(self):
         """Base URL for the dashboard"""
         return "http://localhost:8501"
 
-    @pytest.fixture
+    @pytest.fixture()
     def database_url(self):
         """Database URL for direct testing"""
         return "postgresql://sentilyzer_user:sentilyzer_password@localhost:5432/sentilyzer_db"
 
-    @pytest.fixture
+    @pytest.fixture()
     def db_session(self):
         """Create a test database session."""
         DATABASE_URL = os.getenv(
@@ -106,7 +104,7 @@ class TestPhase3Features:
                 assert "Engagement Metrics:" in article.article_text
                 assert article.published_at is not None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_notification_trigger_exists(self, database_url):
         """
         Test that the PostgreSQL notification infrastructure is properly set up.
@@ -144,7 +142,7 @@ class TestPhase3Features:
         except Exception as e:
             pytest.skip(f"Could not test notification infrastructure: {e}")
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_notification_system_integration(self, database_url):
         """
         Integration test: Insert an article and verify notification is sent.
@@ -257,8 +255,8 @@ class TestPhase3Features:
                 pytest.skip("No processed articles found - system may be starting up")
 
             # Verify the article is properly processed
-            assert processed_article.is_processed == True
-            assert processed_article.has_error == False
+            assert processed_article.is_processed
+            assert not processed_article.has_error
 
             # Verify it has sentiment scores
             sentiment_scores = (
@@ -285,14 +283,12 @@ class TestPhase3Features:
 
             # Count processed articles
             processed_articles = (
-                session.query(RawArticle)
-                .filter(RawArticle.is_processed == True)
-                .count()
+                session.query(RawArticle).filter(RawArticle.is_processed).count()
             )
 
             # Count error articles
             error_articles = (
-                session.query(RawArticle).filter(RawArticle.has_error == True).count()
+                session.query(RawArticle).filter(RawArticle.has_error).count()
             )
 
             # Count sentiment scores
@@ -307,22 +303,21 @@ class TestPhase3Features:
             # Ideally, processed + error should equal total (eventual consistency)
             # But in a running system, there might be articles being processed
             processing_rate = (
-                (processed_articles / total_articles * 100) if total_articles > 0 else 0
+                (processed_articles / total_articles) * 100 if total_articles > 0 else 0
             )
             error_rate = (
-                (error_articles / total_articles * 100) if total_articles > 0 else 0
+                (error_articles / total_articles) * 100 if total_articles > 0 else 0
             )
 
-            print(f"\n=== System Health Statistics ===")
+            print("\n=== System Health Statistics ===")
             print(f"Total Articles: {total_articles}")
             print(f"Processed Articles: {processed_articles} ({processing_rate:.1f}%)")
             print(f"Error Articles: {error_articles} ({error_rate:.1f}%)")
             print(f"Total Sentiment Scores: {total_sentiment_scores}")
-            print(f"===================================")
+            print("===================================")
 
             # Ensure error rate is reasonable
-            if total_articles > 10:  # Only check if we have sufficient data
-                assert error_rate < 20, f"Error rate too high: {error_rate:.1f}%"
+            assert error_rate < 10  # Less than 10% error rate
 
     def test_article_processing(self, db_session: Session):
         """Test article processing functionality."""

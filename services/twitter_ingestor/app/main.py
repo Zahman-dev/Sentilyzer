@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 
 from services.common.app.db.models import RawArticle

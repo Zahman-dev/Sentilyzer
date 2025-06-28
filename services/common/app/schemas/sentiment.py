@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -7,7 +6,9 @@ from pydantic import BaseModel, EmailStr, Field
 # Request schemas
 class SignalsRequest(BaseModel):
     ticker: str = Field(..., description="Stock ticker symbol (e.g., 'AAPL')")
-    start_date: date = Field(..., description="Start date for analysis in YYYY-MM-DD format")
+    start_date: date = Field(
+        ..., description="Start date for analysis in YYYY-MM-DD format"
+    )
     end_date: date = Field(..., description="End date for analysis in YYYY-MM-DD format")
 
 
@@ -37,6 +38,8 @@ class SentimentData(BaseModel):
     )
 
     class Config:
+        """Pydantic configuration."""
+
         from_attributes = True
 
 
@@ -66,7 +69,7 @@ class ErrorResponse(BaseModel):
 # Database model schemas (for internal use)
 class RawArticleBase(BaseModel):
     source: str
-    ticker: Optional[str] = None
+    ticker: str | None = None
     article_url: str
     headline: str
     article_text: str
@@ -85,6 +88,8 @@ class RawArticle(RawArticleBase):
     updated_at: datetime
 
     class Config:
+        """Pydantic configuration."""
+
         from_attributes = True
 
 
@@ -94,6 +99,8 @@ class SentimentScoreBase(BaseModel):
     model_version: str = Field(default="placeholder-v1.0")
 
     class Config:
+        """Pydantic configuration."""
+
         protected_namespaces = ()
 
 
@@ -107,10 +114,13 @@ class SentimentScore(SentimentScoreBase):
     processed_at: datetime
 
     class Config:
+        """Pydantic configuration."""
+
         from_attributes = True
 
 
 # User and API Key schemas
+
 
 # Schemas for User management
 class UserBase(BaseModel):
@@ -118,7 +128,9 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, description="User's password (min 8 characters)")
+    password: str = Field(
+        ..., min_length=8, description="User's password (min 8 characters)"
+    )
 
 
 class User(UserBase):
@@ -127,12 +139,16 @@ class User(UserBase):
     created_at: datetime
 
     class Config:
+        """Pydantic configuration."""
+
         from_attributes = True
 
 
 # Schemas for API Key management
 class ApiKeyBase(BaseModel):
-    expires_at: datetime | None = Field(None, description="Optional expiration date for the API key")
+    expires_at: datetime | None = Field(
+        None, description="Optional expiration date for the API key"
+    )
 
 
 class ApiKeyCreate(ApiKeyBase):
@@ -146,17 +162,23 @@ class ApiKey(ApiKeyBase):
     created_at: datetime
 
     class Config:
+        """Pydantic configuration."""
+
         from_attributes = True
 
 
 class NewApiKeyResponse(BaseModel):
-    api_key: str = Field(..., description="The newly generated API key. This is shown only once.")
+    api_key: str = Field(
+        ..., description="The newly generated API key. This is shown only once."
+    )
     api_key_details: ApiKey
 
 
 class SourceDetail(BaseModel):
     source_name: str = Field(..., description="The name of the data source.")
-    article_count: int = Field(..., description="The number of articles from this source.")
+    article_count: int = Field(
+        ..., description="The number of articles from this source."
+    )
     first_article_date: datetime = Field(
         ..., description="The oldest article's publication date from this source."
     )
@@ -165,12 +187,12 @@ class SourceDetail(BaseModel):
     )
 
     class Config:
-        """Pydantic model configuration."""
+        """Pydantic configuration."""
 
         from_attributes = True
 
 
 class SourcesResponse(BaseModel):
-    sources: List[SourceDetail] = Field(
+    sources: list[SourceDetail] = Field(
         ..., description="A list of available data sources and their details."
     )

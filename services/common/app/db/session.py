@@ -4,8 +4,6 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from services.common.app.db.base import Base
-
 # Load environment variables
 load_dotenv()
 
@@ -38,8 +36,7 @@ def get_db():
 
 
 def create_db_session():
-    """
-    Create a database session for use outside of the FastAPI context.
+    """Create a database session for use outside of the FastAPI context.
 
     Remember to close the session after use.
     """
@@ -52,8 +49,7 @@ def get_db_engine():
 
 
 def create_session():
-    """
-    Create a database session for scripts and utilities.
+    """Create a database session for scripts and utilities.
 
     Alias for create_db_session for consistency with generate_api_key.py.
     """

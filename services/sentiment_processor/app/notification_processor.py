@@ -1,11 +1,9 @@
-"""
-Notification Processor - Utility for sending batch tasks to sentiment processor
-"""
+"""Notification Processor - Utility for sending batch tasks to sentiment processor"""
 
 import os
-from typing import List, Optional
 
 from celery import Celery
+
 from services.common.app.logging_config import configure_logging, get_logger
 from services.sentiment_processor.app.worker import process_sentiment_batch
 
@@ -25,10 +23,8 @@ celery_app.conf.update(
 )
 
 
-def send_sentiment_batch_task(article_ids: List[int]) -> Optional[str]:
-    """
-    Sends a batch of article IDs to the Celery queue for sentiment analysis.
-    """
+def send_sentiment_batch_task(article_ids: list[int]) -> str | None:
+    """Sends a batch of article IDs to the Celery queue for sentiment analysis."""
     if not article_ids:
         logger.warning("No article IDs provided to send_sentiment_batch_task.")
         return None

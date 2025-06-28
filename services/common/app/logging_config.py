@@ -1,17 +1,15 @@
-"""
-Centralized logging configuration for all services.
+"""Centralized logging configuration for all services.
+
 Implements structured JSON logging with proper formatting and log levels.
 """
 
 import logging
 import logging.config
 import sys
-from typing import Optional
 
 
-def configure_logging(service_name: str, log_level: Optional[str] = None) -> None:
-    """
-    Configure logging for a service with structured JSON output and proper log levels.
+def configure_logging(service_name: str, log_level: str | None = None) -> None:
+    """Configure logging for a service with structured JSON output and proper log levels.
 
     Args:
         service_name: Name of the service (e.g., 'data_ingestor', 'sentiment_processor')
@@ -71,8 +69,7 @@ def configure_logging(service_name: str, log_level: Optional[str] = None) -> Non
 
 
 def get_logger(name: str) -> logging.Logger:
-    """
-    Get a logger instance with the specified name.
+    """Get a logger instance with the specified name.
 
     Args:
         name: Name for the logger, typically __name__ or service component name

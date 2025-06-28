@@ -54,7 +54,6 @@ COMPANY_TICKER_MAP = {
     "tesla": "TSLA",
     "nvidia": "NVDA",
     "netflix": "NFLX",
-    
     # Banking & Finance
     "jpmorgan": "JPM",
     "jp morgan": "JPM",
@@ -65,7 +64,6 @@ COMPANY_TICKER_MAP = {
     "citigroup": "C",
     "american express": "AXP",
     "berkshire hathaway": "BRK.B",
-    
     # Healthcare & Pharma
     "johnson & johnson": "JNJ",
     "pfizer": "PFE",
@@ -73,14 +71,12 @@ COMPANY_TICKER_MAP = {
     "abbvie": "ABBV",
     "moderna": "MRNA",
     "eli lilly": "LLY",
-    
     # Industrial
     "boeing": "BA",
     "general electric": "GE",
     "caterpillar": "CAT",
     "3m": "MMM",
     "honeywell": "HON",
-    
     # Retail & Consumer
     "walmart": "WMT",
     "coca-cola": "KO",
@@ -90,12 +86,10 @@ COMPANY_TICKER_MAP = {
     "mcdonald's": "MCD",
     "disney": "DIS",
     "starbucks": "SBUX",
-    
     # Energy
     "exxon": "XOM",
     "chevron": "CVX",
     "conocophillips": "COP",
-    
     # Crypto-related
     "coinbase": "COIN",
     "microstrategy": "MSTR",
@@ -106,31 +100,31 @@ COMPANY_TICKER_MAP = {
 
 class TickerExtractor:
     """Extracts ticker symbols from financial news articles."""
-    
+
     def __init__(self):
         """Initialize the ticker extractor with regex patterns."""
         # Regex patterns for ticker extraction
         self.ticker_patterns = [
-            r'\$([A-Z]{1,5})',  # Pattern like $AAPL
-            r'\b([A-Z]{2,5})\b(?=\s+(?:stock|shares|ticker|symbol))',  # AAPL stock
-            r'\(([A-Z]{2,5})\)',  # Company (AAPL) format
-            r'NYSE:\s*([A-Z]{2,5})',  # NYSE: AAPL
-            r'NASDAQ:\s*([A-Z]{2,5})',  # NASDAQ: AAPL
+            r"\$([A-Z]{1,5})",  # Pattern like $AAPL
+            r"\b([A-Z]{2,5})\b(?=\s+(?:stock|shares|ticker|symbol))",  # AAPL stock
+            r"\(([A-Z]{2,5})\)",  # Company (AAPL) format
+            r"NYSE:\s*([A-Z]{2,5})",  # NYSE: AAPL
+            r"NASDAQ:\s*([A-Z]{2,5})",  # NASDAQ: AAPL
         ]
-        
+
     def extract_ticker_from_text(self, text: str) -> str | None:
         """Extract ticker symbol from headline and article text."""
         if not text:
             return None
-            
+
         text_lower = text.lower()
-        
+
         # First, check company name mapping
         for company_name, ticker in COMPANY_TICKER_MAP.items():
             if company_name in text_lower:
                 logger.debug(f"Found company '{company_name}' -> ticker '{ticker}'")
                 return ticker
-        
+
         # Then try regex patterns
         for pattern in self.ticker_patterns:
             matches = re.findall(pattern, text, re.IGNORECASE)
@@ -139,22 +133,49 @@ class TickerExtractor:
                 if self._is_valid_ticker(ticker):
                     logger.debug(f"Found ticker '{ticker}' using regex pattern")
                     return ticker
-        
+
         return None
-    
+
     def _is_valid_ticker(self, ticker: str) -> bool:
         """Validate if extracted ticker is likely a real ticker symbol."""
         # Basic validation rules
         if len(ticker) < 1 or len(ticker) > 5:
             return False
-        
+
         # Exclude common false positives
         false_positives = {
-            "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HER", "WAS", 
-            "ONE", "OUR", "HAD", "BUT", "HIS", "HER", "SHE", "HE", "NOW", "NEW", "OLD",
-            "GET", "GOT", "PUT", "SET", "RUN", "WAY", "WIN", "WHO", "WHY", "USE",
+            "THE",
+            "AND",
+            "FOR",
+            "ARE",
+            "BUT",
+            "NOT",
+            "YOU",
+            "ALL",
+            "CAN",
+            "HER",
+            "WAS",
+            "ONE",
+            "OUR",
+            "HAD",
+            "HIS",
+            "SHE",
+            "HE",
+            "NOW",
+            "NEW",
+            "OLD",
+            "GET",
+            "GOT",
+            "PUT",
+            "SET",
+            "RUN",
+            "WAY",
+            "WIN",
+            "WHO",
+            "WHY",
+            "USE",
         }
-        
+
         return ticker not in false_positives
 
 
@@ -178,9 +199,7 @@ class DataIngestor:
         if hasattr(self, "session"):
             self.session.close()
 
-    @retry(
-        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10)
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def fetch_rss_feed(self, feed_config: dict[str, str]) -> list[dict[str, Any]]:
         """Fetch articles from an RSS feed with retry logic."""
         try:
@@ -193,11 +212,11 @@ class DataIngestor:
                 try:
                     article_text = self.extract_article_content(entry)
                     published_at = self.parse_published_date(entry)
-                    
+
                     # Extract ticker from headline and content
                     full_text = f"{entry.title} {article_text}"
                     ticker = self.ticker_extractor.extract_ticker_from_text(full_text)
-                    
+
                     article_data = {
                         "source": feed_config["source"],
                         "ticker": ticker,
@@ -207,10 +226,12 @@ class DataIngestor:
                         "published_at": published_at,
                     }
                     articles.append(article_data)
-                    
+
                     if ticker:
-                        logger.debug(f"Extracted ticker '{ticker}' from article: {entry.title[:50]}...")
-                    
+                        logger.debug(
+                            f"Extracted ticker '{ticker}' from article: {entry.title[:50]}..."
+                        )
+
                 except Exception as e:
                     logger.error(
                         f"Error processing entry from {feed_config['name']}: {e!s}"
@@ -267,9 +288,7 @@ class DataIngestor:
                     .first()
                 )
                 if existing:
-                    logger.debug(
-                        f"Article already exists: {article_data['article_url']}"
-                    )
+                    logger.debug(f"Article already exists: {article_data['article_url']}")
                     continue
                 article = RawArticle(**article_data)
                 articles_to_add.append(article)
@@ -314,7 +333,9 @@ celery_app.conf.update(
 )
 
 
-@celery_app.task(name="services.data_ingestor.app.tasks.collect_and_send_batch", bind=True)
+@celery_app.task(
+    name="services.data_ingestor.app.tasks.collect_and_send_batch", bind=True
+)
 def collect_and_send_batch(self):
     """Periodically collect RSS data and send batch processing tasks."""
     logger.info("Starting periodic data collection and batch task sending")
@@ -328,7 +349,9 @@ def collect_and_send_batch(self):
                     saved_ids = ingestor.save_articles(articles)
                     if saved_ids:
                         total_new_article_ids.extend(saved_ids)
-                        logger.info(f"Collected {len(saved_ids)} new article IDs from {feed_config['name']}.")
+                        logger.info(
+                            f"Collected {len(saved_ids)} new article IDs from {feed_config['name']}."
+                        )
             except Exception as e:
                 logger.error(f"Error processing feed {feed_config['name']}: {e}")
                 continue
@@ -370,7 +393,9 @@ def send_batch_processing_task(article_ids: list[int]):
             f"Successfully sent a single batch task for {len(article_ids)} articles."
         )
     except Exception as e:
-        logger.error(f"Error sending the batch processing task for articles {article_ids}: {e}")
+        logger.error(
+            f"Error sending the batch processing task for articles {article_ids}: {e}"
+        )
 
 
 if __name__ == "__main__":

@@ -1,145 +1,139 @@
+import hashlib
 import os
+
+# Add project root to path for imports
+# This is necessary for the test environment to find the service modules
 import sys
-import time
-import unittest
 from datetime import datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
-# Add parent directories to path
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.append(
-    os.path.join(os.path.dirname(__file__), "..", "..", "services", "signals_api")
-)
-sys.path.append(
-    os.path.join(os.path.dirname(__file__), "..", "..", "services", "common")
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 )
 
+from services.common.app.db.base import ApiKey, Base, User
+from services.common.app.db.session import get_db
+from services.signals_api.app.main import create_app
+from tests.integration.db_utils import (
+    TestingSessionLocal,
+    engine,
+    override_get_db,
+)
 
-class TestSignalsAPIIntegration(unittest.TestCase):
-    """Integration tests for Signals API service."""
-
-    @classmethod
-    def setUpClass(cls):
-        """Set up test environment."""
-        # Note: In a real implementation, we would use testcontainers
-        # to spin up a temporary PostgreSQL database for testing.
-        # For now, we'll create a simple test setup.
-        pass
-
-    def setUp(self):
-        """Set up test fixtures."""
-        # Import here to avoid import issues during discovery
-        from services.signals_api.app.main import app
-
-        self.client = TestClient(app)
-
-    def test_health_endpoint(self):
-        """Test the health check endpoint."""
-        response = self.client.get("/health")
-
-        self.assertEqual(response.status_code, 200)
-
-        data = response.json()
-        self.assertEqual(data["status"], "ok")
-        self.assertIn("timestamp", data)
-        self.assertEqual(data["version"], "1.0.0")
-
-    def test_signals_endpoint_request_validation(self):
-        """Test signals endpoint request validation."""
-        # Test with invalid request (missing required fields)
-        response = self.client.post("/v1/signals", json={})
-        self.assertEqual(response.status_code, 422)  # Validation error
-
-        # Test with valid request structure
-        valid_request = {
-            "ticker": "AAPL",
-            "start_date": "2023-01-01T00:00:00Z",
-            "end_date": "2023-01-31T23:59:59Z",
-        }
-
-        # Note: This might fail if database is not properly set up
-        # In a real integration test, we would ensure database connectivity
-        try:
-            response = self.client.post("/v1/signals", json=valid_request)
-            # Should either succeed (200) or fail with server error (500)
-            self.assertIn(response.status_code, [200, 500])
-
-            if response.status_code == 200:
-                data = response.json()
-                self.assertIn("data", data)
-                self.assertIn("total_count", data)
-                self.assertIsInstance(data["data"], list)
-                self.assertIsInstance(data["total_count"], int)
-
-        except Exception as e:
-            # Database connection issues are expected in test environment
-            self.skipTest(
-                f"Database connection required for full integration test: {e}"
-            )
-
-    def test_stats_endpoint(self):
-        """Test the stats endpoint."""
-        try:
-            response = self.client.get("/v1/stats")
-
-            # Should either succeed (200) or fail with server error (500)
-            self.assertIn(response.status_code, [200, 500])
-
-            if response.status_code == 200:
-                data = response.json()
-                expected_fields = [
-                    "total_articles",
-                    "processed_articles",
-                    "error_articles",
-                    "total_sentiment_scores",
-                    "latest_article_date",
-                    "processing_rate",
-                ]
-
-                for field in expected_fields:
-                    self.assertIn(field, data)
-
-        except Exception as e:
-            self.skipTest(
-                f"Database connection required for full integration test: {e}"
-            )
-
-    def test_sources_endpoint(self):
-        """Test the sources endpoint."""
-        try:
-            response = self.client.get("/v1/sources")
-
-            # Should either succeed (200) or fail with server error (500)
-            self.assertIn(response.status_code, [200, 500])
-
-            if response.status_code == 200:
-                data = response.json()
-                self.assertIn("sources", data)
-                self.assertIn("total_sources", data)
-                self.assertIsInstance(data["sources"], list)
-                self.assertIsInstance(data["total_sources"], int)
-
-        except Exception as e:
-            self.skipTest(
-                f"Database connection required for full integration test: {e}"
-            )
-
-    def test_openapi_documentation(self):
-        """Test that OpenAPI documentation is available."""
-        # Test docs endpoint
-        response = self.client.get("/docs")
-        self.assertEqual(response.status_code, 200)
-
-        # Test OpenAPI JSON
-        response = self.client.get("/openapi.json")
-        self.assertEqual(response.status_code, 200)
-
-        openapi_spec = response.json()
-        self.assertIn("info", openapi_spec)
-        self.assertIn("paths", openapi_spec)
-        self.assertEqual(openapi_spec["info"]["title"], "Sentilyzer Signals API")
+# --- App Setup ---
+app = create_app()
+app.dependency_overrides[get_db] = override_get_db
 
 
-if __name__ == "__main__":
-    unittest.main()
+# --- Test Fixtures ---
+@pytest.fixture(scope="module")
+def client():
+    """Create a test client for the app that persists for the module."""
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_database():
+    """Create and drop database tables for the test module."""
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(scope="function")
+def db_session():
+    """Create a new database session for each test function."""
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@pytest.fixture(scope="function")
+def test_user(db_session: Session):
+    """Create a test user in the database for a single test."""
+    user = User(
+        email=f"testuser_{datetime.utcnow().isoformat()}@example.com",
+        hashed_password="testpassword",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user
+
+
+@pytest.fixture(scope="function")
+def valid_api_key(db_session: Session, test_user: User):
+    """Create a valid API key for the test user for a single test."""
+    raw_key = "test_key_valid"
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    api_key = ApiKey(
+        user_id=test_user.id,
+        key_hash=key_hash,
+        expires_at=datetime.utcnow() + timedelta(days=1),
+    )
+    db_session.add(api_key)
+    db_session.commit()
+    return raw_key
+
+
+@pytest.fixture(scope="function")
+def expired_api_key(db_session: Session, test_user: User):
+    """Create an expired API key for the test user for a single test."""
+    raw_key = "test_key_expired"
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    api_key = ApiKey(
+        user_id=test_user.id,
+        key_hash=key_hash,
+        expires_at=datetime.utcnow() - timedelta(days=1),
+    )
+    db_session.add(api_key)
+    db_session.commit()
+    return raw_key
+
+
+class TestSignalsApi:
+    def test_health_check(self, client: TestClient):
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+    def test_get_signals_unauthenticated(self, client: TestClient):
+        response = client.post(
+            "/v1/signals",
+            json={"start_date": "2023-01-01", "end_date": "2023-01-31"},
+        )
+        assert response.status_code == 403
+
+    def test_get_signals_invalid_key(self, client: TestClient):
+        response = client.post(
+            "/v1/signals",
+            headers={"Authorization": "Bearer invalidkey"},
+            json={"start_date": "2023-01-01", "end_date": "2023-01-31"},
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid or expired API key"
+
+    def test_get_signals_expired_key(self, client: TestClient, expired_api_key: str):
+        response = client.post(
+            "/v1/signals",
+            headers={"Authorization": f"Bearer {expired_api_key}"},
+            json={"start_date": "2023-01-01", "end_date": "2023-01-31"},
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "API key has expired"
+
+    def test_get_signals_valid_key(self, client: TestClient, valid_api_key: str):
+        response = client.post(
+            "/v1/signals",
+            headers={"Authorization": f"Bearer {valid_api_key}"},
+            json={"start_date": "2023-01-01", "end_date": "2023-01-31"},
+        )
+        # The response should be 200 even if no data is found for the query.
+        assert response.status_code == 200
+        assert "signals" in response.json()

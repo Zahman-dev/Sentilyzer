@@ -82,6 +82,10 @@ def get_database_stats() -> dict:
         latest_article = db.query(RawArticle).order_by(desc(RawArticle.published_at)).first()
         latest_date = latest_article.published_at if latest_article else None
 
+        # Ensure latest_date is timezone-aware
+        if latest_date and latest_date.tzinfo is None:
+            latest_date = latest_date.replace(tzinfo=timezone.utc)
+
         # Add debug logging for database datetime
         if latest_date:
             logger.info(f"Database latest_date: {latest_date} (type: {type(latest_date)}, tzinfo: {latest_date.tzinfo})")
@@ -228,18 +232,23 @@ def render_overview_metrics(stats: dict):
     # Calculate time since last article
     last_article_time_str = "N/A"
     if latest_date:
-        # Ensure latest_date is timezone-aware
+        # Both datetimes should be timezone-aware UTC
+        now_utc = datetime.now(timezone.utc)
         if latest_date.tzinfo is None:
             latest_date = latest_date.replace(tzinfo=timezone.utc)
+            logger.warning("Latest date was timezone-naive, converted to UTC")
 
-        now_utc = datetime.now(timezone.utc)
-        hours_ago = (now_utc - latest_date).total_seconds() / 3600
+        try:
+            hours_ago = (now_utc - latest_date).total_seconds() / 3600
 
-        if hours_ago < 1:
-            minutes_ago = int(hours_ago * 60)
-            last_article_time_str = f"{minutes_ago} minutes ago"
-        else:
-            last_article_time_str = f"{int(hours_ago)}h ago"
+            if hours_ago < 1:
+                minutes_ago = int(hours_ago * 60)
+                last_article_time_str = f"{minutes_ago}m ago"
+            else:
+                last_article_time_str = f"{int(hours_ago)}h ago"
+        except Exception as e:
+            logger.error(f"Error calculating time difference: {e}")
+            last_article_time_str = "Error"
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -481,7 +490,7 @@ def main():
         Sentilyzer Dashboard - Real-time Financial Sentiment Analysis<br>
         Last updated: {}
         </div>
-        """.format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        """.format(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
         unsafe_allow_html=True
     )
 

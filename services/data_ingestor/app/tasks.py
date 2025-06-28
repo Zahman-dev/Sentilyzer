@@ -1,7 +1,4 @@
-"""
-Data Ingestor Scheduler - Celery Beat scheduler for periodic data collection and batch
-    task sending
-"""
+"""Celery Beat scheduler for periodic data collection and task sending."""
 
 import os
 import sys
@@ -11,7 +8,6 @@ from typing import Any, Dict, List
 import feedparser
 from bs4 import BeautifulSoup
 from celery import Celery
-from celery.schedules import crontab
 from sqlalchemy import and_
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -47,7 +43,10 @@ RSS_FEEDS = [
 
 
 class DataIngestor:
+    """A class to handle fetching, parsing, and storing articles from RSS feeds."""
+
     def __init__(self):
+        """Initializes the DataIngestor with a database session and stats."""
         self.session = create_db_session()
         self.stats = {
             "total_fetched": 0,
@@ -57,6 +56,7 @@ class DataIngestor:
         }
 
     def __del__(self):
+        """Ensures the database session is closed when the object is destroyed."""
         if hasattr(self, "session"):
             self.session.close()
 
@@ -64,9 +64,7 @@ class DataIngestor:
         stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10)
     )
     def fetch_rss_feed(self, feed_config: Dict[str, str]) -> List[Dict[str, Any]]:
-        """
-        Fetch articles from RSS feed with retry logic.
-        """
+        """Fetch articles from an RSS feed with retry logic."""
         try:
             logger.info(f"Fetching RSS feed: {feed_config['name']}")
             feed = feedparser.parse(feed_config["url"])
@@ -102,9 +100,7 @@ class DataIngestor:
             raise
 
     def extract_article_content(self, entry) -> str:
-        """
-        Extract article content from RSS entry.
-        """
+        """Extract article content from an RSS entry."""
         content = ""
         if hasattr(entry, "summary") and entry.summary:
             content = entry.summary
@@ -118,9 +114,7 @@ class DataIngestor:
         return content or entry.title
 
     def parse_published_date(self, entry) -> datetime:
-        """
-        Parse published date from RSS entry.
-        """
+        """Parse the published date from an RSS entry."""
         if hasattr(entry, "published_parsed") and entry.published_parsed:
             return datetime(*entry.published_parsed[:6])
         elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
@@ -128,15 +122,16 @@ class DataIngestor:
         else:
             return datetime.utcnow()
 
-    def save_articles(self, articles: List[Dict[str, Any]]) -> int:
-        """
-        Save articles to database, avoiding duplicates.
-        """
+    def save_articles(self, articles: List[Dict[str, Any]]) -> List[int]:
+        """Save articles to db, avoid duplicates, and return new article IDs."""
         saved_count = 0
+        new_article_ids = []
+        articles_to_add = []
+
         for article_data in articles:
             try:
                 existing = (
-                    self.session.query(RawArticle)
+                    self.session.query(RawArticle.id)
                     .filter(RawArticle.article_url == article_data["article_url"])
                     .first()
                 )
@@ -146,28 +141,31 @@ class DataIngestor:
                     )
                     continue
                 article = RawArticle(**article_data)
-                self.session.add(article)
+                articles_to_add.append(article)
                 saved_count += 1
             except Exception as e:
                 logger.error(
-                    f"Error saving article {article_data.get('article_url', 'unknown')}: {str(e)}"
+                    f"Error preparing article {article_data.get('article_url', 'unknown')} for saving: {str(e)}"
                 )
                 self.stats["errors"] += 1
-                try:
-                    error_article = RawArticle(**article_data, has_error=True)
-                    self.session.add(error_article)
-                except Exception:
-                    pass
+
+        if not articles_to_add:
+            return []
+
         try:
+            self.session.add_all(articles_to_add)
+            self.session.flush()
+            new_article_ids = [article.id for article in articles_to_add if article.id]
             self.session.commit()
             self.stats["total_saved"] += saved_count
-            logger.info(f"Saved {saved_count} new articles to database")
+            logger.info(f"Saved {saved_count} new articles to database.")
         except Exception as e:
             self.session.rollback()
-            logger.error(f"Error committing articles to database: {str(e)}")
-            self.stats["errors"] += 1
-            raise
-        return saved_count
+            logger.error(f"Error committing new articles to database: {str(e)}")
+            self.stats["errors"] += len(articles_to_add)
+            return []
+
+        return new_article_ids
 
 
 # Initialize Celery
@@ -177,39 +175,42 @@ celery_app.conf.update(
     result_backend=os.environ.get("CELERY_RESULT_BACKEND", "redis://redis:6379/0"),
     beat_schedule={
         "collect-and-send-batch-every-5-minutes": {
-            "task": "services.data_ingestor.app.scheduler.collect_and_send_batch",
-            "schedule": 300.0,  # Every 5 minutes
+            "task": "services.data_ingestor.app.tasks.collect_and_send_batch",
+            "schedule": 300.0,
         },
     },
     timezone="UTC",
 )
 
 
-@celery_app.task(name="services.data_ingestor.app.scheduler.collect_and_send_batch", bind=True)
+@celery_app.task(name="services.data_ingestor.app.tasks.collect_and_send_batch", bind=True)
 def collect_and_send_batch(self):
-    """
-    Periodic task to collect RSS data and send batch processing tasks.
-    """
+    """Periodically collect RSS data and send batch processing tasks."""
     logger.info("Starting periodic data collection and batch task sending")
     try:
         ingestor = DataIngestor()
-        total_new_articles = 0
+        total_new_article_ids = []
         for feed_config in RSS_FEEDS:
             try:
                 articles = ingestor.fetch_rss_feed(feed_config)
-                saved_count = ingestor.save_articles(articles)
-                total_new_articles += saved_count
+                if articles:
+                    saved_ids = ingestor.save_articles(articles)
+                    if saved_ids:
+                        total_new_article_ids.extend(saved_ids)
+                        logger.info(f"Collected {len(saved_ids)} new article IDs from {feed_config['name']}.")
             except Exception as e:
                 logger.error(f"Error processing feed {feed_config['name']}: {e}")
                 continue
 
-        logger.info(f"Total new articles collected: {total_new_articles}")
-        if total_new_articles > 0:
-            send_batch_processing_tasks()
+        if total_new_article_ids:
+            logger.info(f"Total new articles to process: {len(total_new_article_ids)}")
+            send_batch_processing_tasks(total_new_article_ids)
+        else:
+            logger.info("No new articles found in this cycle.")
 
         return {
             "status": "success",
-            "new_articles": total_new_articles,
+            "new_articles": len(total_new_article_ids),
             "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
@@ -221,29 +222,17 @@ def collect_and_send_batch(self):
         }
 
 
-def send_batch_processing_tasks():
-    """
-    Send batch processing tasks for unprocessed articles.
-    """
-    session = None
-    try:
-        session = create_db_session()
-        unprocessed_articles = (
-            session.query(RawArticle)
-            .filter(
-                and_(RawArticle.is_processed == False, RawArticle.has_error == False)
-            )
-            .all()
-        )
-        if not unprocessed_articles:
-            logger.info("No unprocessed articles found")
-            return
+def send_batch_processing_tasks(article_ids: List[int]):
+    """Send batch processing tasks for a specific list of article IDs."""
+    if not article_ids:
+        logger.info("No new article IDs to send for processing.")
+        return
 
+    try:
         batch_size = 20
-        article_ids = [article.id for article in unprocessed_articles]
         batches_sent = 0
         for i in range(0, len(article_ids), batch_size):
-            batch_ids = article_ids[i : i + batch_size]
+            batch_ids = article_ids[i:i + batch_size]
             try:
                 celery_app.send_task(
                     "services.sentiment_processor.app.worker.process_sentiment_batch",
@@ -262,12 +251,9 @@ def send_batch_processing_tasks():
         )
     except Exception as e:
         logger.error(f"Error in send_batch_processing_tasks: {e}")
-    finally:
-        if session:
-            session.close()
+
 
 if __name__ == "__main__":
     logger.info(
         "This script defines Celery Beat tasks and is not meant for direct execution."
     )
-    # To run beat: celery -A services.data_ingestor.app.scheduler.celery_app beat --loglevel=info

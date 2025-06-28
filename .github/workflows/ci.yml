@@ -7,10 +7,8 @@ on:
     branches: [ main ]
 
 env:
-  PYTHON_VERSION: '3.10'
+  PYTHON_VERSION: '3.10.17'
   DOCKER_IMAGE_PREFIX: ghcr.io/${{ github.repository }}/sentilyzer-
-  # Set a single source of truth for the uv cache key
-  UV_CACHE_KEY: uv-${{ hashFiles('**/pyproject.toml') }}
 
 jobs:
   # ------------------------------------------------
@@ -29,14 +27,14 @@ jobs:
       - name: Set up Python with uv
         run: |
           source "$HOME/.cargo/env"
-          uv venv
+          uv venv --python 3.10.17
           echo "VIRTUAL_ENV=.venv" >> $GITHUB_ENV
 
       - name: Cache uv
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
-          key: ${{ env.UV_CACHE_KEY }}
+          key: uv-${{ runner.os }}-${{ github.sha }}
 
       - name: Install dependencies
         run: |
@@ -94,14 +92,14 @@ jobs:
       - name: Set up Python with uv
         run: |
           source "$HOME/.cargo/env"
-          uv venv
+          uv venv --python 3.10.17
           echo "VIRTUAL_ENV=.venv" >> $GITHUB_ENV
 
       - name: Cache uv
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
-          key: ${{ env.UV_CACHE_KEY }}
+          key: uv-${{ runner.os }}-${{ github.sha }}
 
       - name: Install dependencies with Torch CPU
         run: |

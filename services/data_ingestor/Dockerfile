@@ -30,4 +30,10 @@ FROM builder as application
 
 WORKDIR /app
 
-CMD ["python", "-m", "services.data_ingestor.app.main"] 
+# Copy and set up the entrypoint script
+COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]
+
+# The command to run the Celery Beat scheduler, passed to the entrypoint
+CMD ["celery", "-A", "services.data_ingestor.app.tasks.celery_app", "beat", "--loglevel=info"] 

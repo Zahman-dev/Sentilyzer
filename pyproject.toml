@@ -7,7 +7,7 @@ name = "sentilyzer"
 version = "0.1.0"
 description = "A modern Python microservices project for sentiment analysis."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.10.17"
 license = { text = "MIT" }
 authors = [
   { name = "Sentilyzer Team", email = "contact@sentilyzer.dev" },

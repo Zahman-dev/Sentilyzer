@@ -71,7 +71,7 @@ async def get_current_user(
         # Query for the API key
         api_key_record = (
             db.query(ApiKey)
-            .filter(and_(ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True)))
+            .filter(and_(ApiKey.key_hash == key_hash, ApiKey.is_active))
             .first()
         )
 
@@ -80,14 +80,14 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="Invalid or expired API key")
 
         # Check if API key has an expiration date and if it's expired
-        if api_key_record.expires_at and api_key_record.expires_at < datetime.utcnow():
+        if api_key_record.expires_at is not None and api_key_record.expires_at < datetime.utcnow():
             logger.warning(f"Expired API key used for user: {api_key_record.user_id}")
             raise HTTPException(status_code=401, detail="API key has expired")
 
         # Get associated user
         user = (
             db.query(User)
-            .filter(and_(User.id == api_key_record.user_id, User.is_active.is_(True)))
+            .filter(and_(User.id == api_key_record.user_id, User.is_active))
             .first()
         )
 
@@ -147,6 +147,7 @@ async def get_sentiment_signals(
             .join(SentimentScore, RawArticle.id == SentimentScore.article_id)
             .filter(
                 and_(
+                    RawArticle.ticker == request.ticker,
                     RawArticle.published_at >= request.start_date,
                     RawArticle.published_at <= request.end_date,
                     RawArticle.has_error.is_(False),

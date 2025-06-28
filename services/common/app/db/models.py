@@ -20,6 +20,7 @@ class RawArticle(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     source = Column(String, nullable=False, index=True)
+    ticker = Column(String, nullable=True, index=True)
     article_url = Column(String, unique=True, nullable=False, index=True)
     headline = Column(Text, nullable=False)
     article_text = Column(Text, nullable=False)

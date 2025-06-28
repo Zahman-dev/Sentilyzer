@@ -1,6 +1,7 @@
 """Celery Beat scheduler for periodic data collection and task sending."""
 
 import os
+import re
 import sys
 from datetime import datetime
 from typing import Any
@@ -40,6 +41,122 @@ RSS_FEEDS = [
     },
 ]
 
+# Common company name to ticker mapping for major stocks
+COMPANY_TICKER_MAP = {
+    # Tech giants
+    "apple": "AAPL",
+    "microsoft": "MSFT",
+    "amazon": "AMZN",
+    "alphabet": "GOOGL",
+    "google": "GOOGL",
+    "meta": "META",
+    "facebook": "META",
+    "tesla": "TSLA",
+    "nvidia": "NVDA",
+    "netflix": "NFLX",
+    
+    # Banking & Finance
+    "jpmorgan": "JPM",
+    "jp morgan": "JPM",
+    "goldman sachs": "GS",
+    "morgan stanley": "MS",
+    "bank of america": "BAC",
+    "wells fargo": "WFC",
+    "citigroup": "C",
+    "american express": "AXP",
+    "berkshire hathaway": "BRK.B",
+    
+    # Healthcare & Pharma
+    "johnson & johnson": "JNJ",
+    "pfizer": "PFE",
+    "merck": "MRK",
+    "abbvie": "ABBV",
+    "moderna": "MRNA",
+    "eli lilly": "LLY",
+    
+    # Industrial
+    "boeing": "BA",
+    "general electric": "GE",
+    "caterpillar": "CAT",
+    "3m": "MMM",
+    "honeywell": "HON",
+    
+    # Retail & Consumer
+    "walmart": "WMT",
+    "coca-cola": "KO",
+    "pepsi": "PEP",
+    "procter & gamble": "PG",
+    "nike": "NKE",
+    "mcdonald's": "MCD",
+    "disney": "DIS",
+    "starbucks": "SBUX",
+    
+    # Energy
+    "exxon": "XOM",
+    "chevron": "CVX",
+    "conocophillips": "COP",
+    
+    # Crypto-related
+    "coinbase": "COIN",
+    "microstrategy": "MSTR",
+    "bitcoin": "BTC-USD",
+    "ethereum": "ETH-USD",
+}
+
+
+class TickerExtractor:
+    """Extracts ticker symbols from financial news articles."""
+    
+    def __init__(self):
+        """Initialize the ticker extractor with regex patterns."""
+        # Regex patterns for ticker extraction
+        self.ticker_patterns = [
+            r'\$([A-Z]{1,5})',  # Pattern like $AAPL
+            r'\b([A-Z]{2,5})\b(?=\s+(?:stock|shares|ticker|symbol))',  # AAPL stock
+            r'\(([A-Z]{2,5})\)',  # Company (AAPL) format
+            r'NYSE:\s*([A-Z]{2,5})',  # NYSE: AAPL
+            r'NASDAQ:\s*([A-Z]{2,5})',  # NASDAQ: AAPL
+        ]
+        
+    def extract_ticker_from_text(self, text: str) -> str | None:
+        """Extract ticker symbol from headline and article text."""
+        if not text:
+            return None
+            
+        text_lower = text.lower()
+        
+        # First, check company name mapping
+        for company_name, ticker in COMPANY_TICKER_MAP.items():
+            if company_name in text_lower:
+                logger.debug(f"Found company '{company_name}' -> ticker '{ticker}'")
+                return ticker
+        
+        # Then try regex patterns
+        for pattern in self.ticker_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                ticker = match.upper()
+                if self._is_valid_ticker(ticker):
+                    logger.debug(f"Found ticker '{ticker}' using regex pattern")
+                    return ticker
+        
+        return None
+    
+    def _is_valid_ticker(self, ticker: str) -> bool:
+        """Validate if extracted ticker is likely a real ticker symbol."""
+        # Basic validation rules
+        if len(ticker) < 1 or len(ticker) > 5:
+            return False
+        
+        # Exclude common false positives
+        false_positives = {
+            "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HER", "WAS", 
+            "ONE", "OUR", "HAD", "BUT", "HIS", "HER", "SHE", "HE", "NOW", "NEW", "OLD",
+            "GET", "GOT", "PUT", "SET", "RUN", "WAY", "WIN", "WHO", "WHY", "USE",
+        }
+        
+        return ticker not in false_positives
+
 
 class DataIngestor:
     """A class to handle fetching, parsing, and storing articles from RSS feeds."""
@@ -47,9 +164,11 @@ class DataIngestor:
     def __init__(self):
         """Initializes the DataIngestor with a database session and stats."""
         self.session = create_db_session()
+        self.ticker_extractor = TickerExtractor()
         self.stats = {
             "total_fetched": 0,
             "total_saved": 0,
+            "with_ticker": 0,
             "errors": 0,
             "start_time": datetime.utcnow(),
         }
@@ -74,14 +193,24 @@ class DataIngestor:
                 try:
                     article_text = self.extract_article_content(entry)
                     published_at = self.parse_published_date(entry)
+                    
+                    # Extract ticker from headline and content
+                    full_text = f"{entry.title} {article_text}"
+                    ticker = self.ticker_extractor.extract_ticker_from_text(full_text)
+                    
                     article_data = {
                         "source": feed_config["source"],
+                        "ticker": ticker,
                         "article_url": entry.link,
                         "headline": entry.title,
                         "article_text": article_text,
                         "published_at": published_at,
                     }
                     articles.append(article_data)
+                    
+                    if ticker:
+                        logger.debug(f"Extracted ticker '{ticker}' from article: {entry.title[:50]}...")
+                    
                 except Exception as e:
                     logger.error(
                         f"Error processing entry from {feed_config['name']}: {e!s}"
@@ -89,8 +218,11 @@ class DataIngestor:
                     self.stats["errors"] += 1
                     continue
             self.stats["total_fetched"] += len(articles)
+            ticker_count = sum(1 for article in articles if article.get("ticker"))
+            self.stats["with_ticker"] += ticker_count
             logger.info(
-                f"Successfully fetched {len(articles)} articles from {feed_config['name']}"
+                f"Successfully fetched {len(articles)} articles from {feed_config['name']} "
+                f"({ticker_count} with tickers)"
             )
             return articles
         except Exception as e:

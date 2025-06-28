@@ -7,9 +7,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 import hashlib
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, HTTPException, Security, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
@@ -30,6 +33,18 @@ logger = get_logger(__name__)
 # Security
 security = HTTPBearer()
 
+# Rate limiter setup
+def get_user_id_for_rate_limit(request: Request) -> str:
+    """Get user identifier for rate limiting. Prefers authenticated user ID over IP."""
+    # Try to get authenticated user first
+    if hasattr(request.state, 'current_user') and request.state.current_user:
+        return f"user:{request.state.current_user.id}"
+    
+    # Fall back to IP address for unauthenticated requests
+    return f"ip:{get_remote_address(request)}"
+
+limiter = Limiter(key_func=get_user_id_for_rate_limit, default_limits=["100/minute"])
+
 # Create FastAPI app
 app = FastAPI(
     title="Sentilyzer Signals API",
@@ -38,6 +53,10 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Add rate limiting state and handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware
 app.add_middleware(
@@ -57,6 +76,7 @@ credentials_exception = HTTPException(
 
 
 async def get_current_user(
+    request: Request,
     token: HTTPAuthorizationCredentials = Security(security),
     db: Session = Depends(get_db),
 ) -> User:
@@ -97,6 +117,9 @@ async def get_current_user(
             )
             raise HTTPException(status_code=401, detail="User account is inactive")
 
+        # Store user in request state for rate limiting
+        request.state.current_user = user
+
         logger.info(f"Authenticated user: {user.email}")
         return user
 
@@ -110,13 +133,16 @@ async def get_current_user(
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check():
+@limiter.limit("60/minute")
+async def health_check(request: Request):
     """Health check endpoint - No authentication required."""
     return HealthResponse(status="ok", timestamp=datetime.utcnow(), version="1.0.0")
 
 
 @app.post("/v1/signals", response_model=SignalsResponse)
+@limiter.limit("50/minute")
 async def get_sentiment_signals(
+    req: Request,
     request: SignalsRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -186,8 +212,11 @@ async def get_sentiment_signals(
 
 
 @app.get("/v1/stats")
+@limiter.limit("30/minute")
 async def get_stats(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    request: Request,
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
 ):
     """Get basic statistics about the data in the system.
 
@@ -234,8 +263,11 @@ async def get_stats(
 
 
 @app.get("/v1/sources")
+@limiter.limit("30/minute")
 async def get_sources(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    request: Request,
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
 ):
     """Get available data sources and their article counts.
 

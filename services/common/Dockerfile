@@ -25,5 +25,5 @@ RUN uv pip install --system --no-cache ".[common]"
 # ----------------- Final Application Stage -----------------
 FROM builder as application
 
-# This image doesn't run on its own.
-CMD ["/bin/true"] 
+# For migration service: run alembic upgrade
+CMD ["alembic", "-c", "services/common/alembic.ini", "upgrade", "head"] 

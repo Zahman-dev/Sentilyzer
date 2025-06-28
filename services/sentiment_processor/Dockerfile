@@ -35,21 +35,16 @@ RUN uv pip install \
 # uv is smart enough to see that torch is already installed and will not fetch it again.
 RUN uv pip install --system --no-cache ".[sentiment_processor]"
 
-# Create a non-root user for security
-RUN groupadd -r worker && useradd -r -g worker worker
-RUN mkdir -p /home/worker/.cache && chown -R worker:worker /home/worker
-ENV TRANSFORMERS_CACHE="/home/worker/.cache"
-USER worker
-
 # ----------------- Final Application Stage -----------------
 FROM builder as application
 
 WORKDIR /app
 
-# Copy and set up the entrypoint script
-COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
-ENTRYPOINT ["/docker-entrypoint.sh"]
+# Create a non-root user for security and set up cache
+RUN groupadd -r worker && useradd -r -g worker worker
+RUN mkdir -p /home/worker/.cache && chown -R worker:worker /home/worker
+ENV TRANSFORMERS_CACHE="/home/worker/.cache"
+USER worker
 
-# The command to run the Celery worker, passed to the entrypoint
+# The command to run the Celery worker
 CMD ["celery", "-A", "services.sentiment_processor.app.worker.celery_app", "worker", "--loglevel=info"]

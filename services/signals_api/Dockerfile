@@ -30,12 +30,7 @@ FROM builder as application
 
 WORKDIR /app
 
-# Copy and set up the entrypoint script
-COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
-ENTRYPOINT ["/docker-entrypoint.sh"]
-
-# The command to run the API server, passed to the entrypoint
+# The command to run the API server
 CMD ["uvicorn", "services.signals_api.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 EXPOSE 8000

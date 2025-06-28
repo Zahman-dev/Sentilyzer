@@ -174,6 +174,17 @@ class TickerExtractor:
             "WHO",
             "WHY",
             "USE",
+            "CEO",
+            "CFO",
+            "COO",
+            "CTO",
+            "USA",
+            "SEC",
+            "UK",
+            "EU",
+            "OR",
+            "A",
+            "I",
         }
 
         return ticker not in false_positives

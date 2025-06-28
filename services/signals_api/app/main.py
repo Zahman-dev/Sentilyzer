@@ -1,12 +1,13 @@
-import os
-import sys
+"""Main module for the Signals API service.
 
-# Add project root to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+This service provides endpoints for retrieving sentiment signals for stocks.
+"""
 
 import hashlib
-from datetime import datetime, timezone
+import os
+from datetime import datetime
 
+import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -14,12 +15,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from sqlalchemy import and_, desc, func, text
+from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
 from services.common.app.db.models import ApiKey, RawArticle, SentimentScore, User
 from services.common.app.db.session import get_db
-from services.common.app.logging_config import configure_logging, get_logger
+from services.common.app.logging_config import get_logger
 from services.common.app.schemas.sentiment import (
     HealthResponse,
     SentimentData,
@@ -28,30 +29,22 @@ from services.common.app.schemas.sentiment import (
 )
 
 # Configure logging for the service
-configure_logging("signals_api")
 logger = get_logger(__name__)
 
 # Security
 security = HTTPBearer()
 
+# Environment variables
+API_HOST = os.getenv("API_HOST", "127.0.0.1")  # Default to localhost for security
+API_PORT = int(os.getenv("API_PORT", "8000"))
 
 # Rate limiter setup
-def get_user_id_for_rate_limit(request: Request) -> str:
-    """Get user identifier for rate limiting. Prefers authenticated user ID over IP."""
-    # Try to get authenticated user first
-    if hasattr(request.state, "current_user") and request.state.current_user:
-        return f"user:{request.state.current_user.id}"
-
-    # Fall back to IP address for unauthenticated requests
-    return f"ip:{get_remote_address(request)}"
-
-
-limiter = Limiter(key_func=get_user_id_for_rate_limit, default_limits=["100/minute"])
+limiter = Limiter(key_func=get_remote_address)
 
 # Create FastAPI app
 app = FastAPI(
     title="Sentilyzer Signals API",
-    description="Financial sentiment analysis and signals API",
+    description="API for retrieving sentiment signals for stocks",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -106,11 +99,7 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="Invalid or expired API key")
 
         # Check if API key has an expiration date and if it's expired
-        expiration_check = and_(
-            api_key_record.expires_at.isnot(None),
-            api_key_record.expires_at <= text("NOW()")
-        )
-        if db.query(expiration_check).scalar():
+        if api_key_record.expires_at is not None and api_key_record.expires_at <= datetime.utcnow():
             logger.warning(f"Expired API key used for user: {api_key_record.user_id}")
             raise HTTPException(status_code=401, detail="API key has expired")
 
@@ -151,8 +140,8 @@ async def health_check(request: Request):
 @app.post("/v1/signals", response_model=SignalsResponse)
 @limiter.limit("50/minute")
 async def get_sentiment_signals(
-    req: Request,
-    request: SignalsRequest,
+    request: Request,
+    signals_request: SignalsRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -167,7 +156,7 @@ async def get_sentiment_signals(
     """
     try:
         logger.info(
-            f"Processing signals request for user: {current_user.email}, ticker: {request.ticker}, dates: {request.start_date} to {request.end_date}"
+            f"Processing signals request for user: {current_user.email}, ticker: {signals_request.ticker}, dates: {signals_request.start_date} to {signals_request.end_date}"
         )
 
         # Query for articles with sentiment scores in the date range
@@ -182,9 +171,9 @@ async def get_sentiment_signals(
             .join(SentimentScore, RawArticle.id == SentimentScore.article_id)
             .filter(
                 and_(
-                    RawArticle.ticker == request.ticker,
-                    RawArticle.published_at >= request.start_date,
-                    RawArticle.published_at <= request.end_date,
+                    RawArticle.ticker == signals_request.ticker,
+                    RawArticle.published_at >= signals_request.start_date,
+                    RawArticle.published_at <= signals_request.end_date,
                     RawArticle.has_error.is_(False),
                 )
             )
@@ -318,7 +307,11 @@ async def get_sources(
 
 
 if __name__ == "__main__":
-    import uvicorn
-
     logger.info("Starting Signals API Service")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")
+    uvicorn.run(
+        "main:app",
+        host=API_HOST,
+        port=API_PORT,
+        reload=True,
+        log_level="info"
+    )
